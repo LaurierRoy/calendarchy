@@ -25,8 +25,8 @@ use crossterm::{
 use google::{CalendarClient, GoogleAuth, TokenInfo};
 use icloud::{CalDavClient, ICalEvent, ICloudAuth};
 use std::io::stdout;
-use std::os::unix::process::CommandExt;
 use std::time::Duration as StdDuration;
+use utils::open_url;
 use tokio::sync::mpsc;
 
 /// Messages from async tasks to main loop
@@ -516,10 +516,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 // Join meeting
                                 if let Some(event) = app.get_selected_event()
                                     && let Some(ref url) = event.meeting_url {
-                                        let _ = std::process::Command::new("xdg-open")
-                                            .arg(url)
-                                            .process_group(0)
-                                            .spawn();
+                                        open_url(url);
                                     }
                             }
                             (KeyCode::Char('a') | KeyCode::Char('а'), _) => {
@@ -589,16 +586,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 execute!(stdout(), Clear(ClearType::All)).ok();
                             }
                             (KeyCode::Char('1'), _) => {
-                                let _ = std::process::Command::new("xdg-open")
-                                    .arg("https://calendar.google.com")
-                                    .process_group(0)
-                                    .spawn();
+                                open_url("https://calendar.google.com");
                             }
                             (KeyCode::Char('2'), _) => {
-                                let _ = std::process::Command::new("xdg-open")
-                                    .arg("https://www.icloud.com/calendar")
-                                    .process_group(0)
-                                    .spawn();
+                                open_url("https://www.icloud.com/calendar");
                             }
                             (KeyCode::Char('q') | KeyCode::Char('я'), _) => {
                                 break;
@@ -652,16 +643,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             execute!(stdout(), Clear(ClearType::All)).ok();
                         }
                         (KeyCode::Char('1'), _) => {
-                            let _ = std::process::Command::new("xdg-open")
-                                .arg("https://calendar.google.com")
-                                .process_group(0)
-                                .spawn();
+                            open_url("https://calendar.google.com");
                         }
                         (KeyCode::Char('2'), _) => {
-                            let _ = std::process::Command::new("xdg-open")
-                                .arg("https://www.icloud.com/calendar")
-                                .process_group(0)
-                                .spawn();
+                            open_url("https://www.icloud.com/calendar");
                         }
                         (KeyCode::Char('g') | KeyCode::Char('г'), _) => {
                             // Start Google auth flow (only if not already authenticated)

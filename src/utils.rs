@@ -2,6 +2,25 @@
 
 use crate::cache::{AttendeeStatus, DisplayAttendee};
 
+/// Open a URL in the default browser (platform-specific)
+#[cfg(target_os = "macos")]
+pub fn open_url(url: &str) {
+    use std::os::unix::process::CommandExt;
+    let _ = std::process::Command::new("open")
+        .arg(url)
+        .process_group(0)
+        .spawn();
+}
+
+#[cfg(target_os = "linux")]
+pub fn open_url(url: &str) {
+    use std::os::unix::process::CommandExt;
+    let _ = std::process::Command::new("xdg-open")
+        .arg(url)
+        .process_group(0)
+        .spawn();
+}
+
 /// Sort order for attendee status (lower = first)
 pub fn status_sort_order(status: &AttendeeStatus) -> u8 {
     match status {
