@@ -11,17 +11,19 @@ struct Terminal {
 }
 
 const TERMINALS: &[Terminal] = &[
-    Terminal { name: "Ghostty", app: "Ghostty.app", launch_fmt: "open -na Ghostty.app --args -e {}" },
+    Terminal { name: "Ghostty", app: "Ghostty.app", launch_fmt: "open -na Ghostty.app --args --window-width=120 --window-height=40 -e {}" },
     Terminal { name: "iTerm2", app: "iTerm.app", launch_fmt: "open -na iTerm.app --args {}" },
-    Terminal { name: "Alacritty", app: "Alacritty.app", launch_fmt: "open -na Alacritty.app --args -e {}" },
-    Terminal { name: "Kitty", app: "kitty.app", launch_fmt: "open -na kitty.app --args {}" },
-    Terminal { name: "WezTerm", app: "WezTerm.app", launch_fmt: "open -na WezTerm.app --args start -- {}" },
-    Terminal { name: "Terminal", app: "Terminal.app", launch_fmt: "open -a Terminal {}" },
+    Terminal { name: "Alacritty", app: "Alacritty.app", launch_fmt: "open -na Alacritty.app --args --option window.dimensions.columns=120 --option window.dimensions.lines=40 -e {}" },
+    Terminal { name: "Kitty", app: "kitty.app", launch_fmt: "open -na kitty.app --args -o initial_window_width=120c -o initial_window_height=40c {}" },
+    Terminal { name: "WezTerm", app: "WezTerm.app", launch_fmt: "open -na WezTerm.app --args --config initial_cols=120 --config initial_rows=40 start -- {}" },
+    Terminal { name: "Terminal", app: "Terminal.app", launch_fmt: "osascript -e 'tell application \"Terminal\"' -e 'do script \"{}\"' -e 'set number of columns of front window to 120' -e 'set number of rows of front window to 40' -e 'activate' -e 'end tell'" },
 ];
 
 fn detect_terminals() -> Vec<&'static Terminal> {
     TERMINALS.iter().filter(|t| {
         PathBuf::from(format!("/Applications/{}", t.app)).exists()
+            || PathBuf::from(format!("/System/Applications/{}", t.app)).exists()
+            || PathBuf::from(format!("/System/Applications/Utilities/{}", t.app)).exists()
     }).collect()
 }
 
