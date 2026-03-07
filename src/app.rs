@@ -25,6 +25,58 @@ pub struct SearchResult {
     pub match_type: MatchType,
 }
 
+/// Interactive setup wizard step
+#[derive(Debug, Clone, PartialEq)]
+pub enum SetupStep {
+    Welcome,
+    GoogleAsk,
+    GoogleOpenUrl,
+    GoogleClientId,
+    GoogleSecret,
+    ICloudAsk,
+    ICloudMethod,     // Choose EventKit vs CalDAV (macOS only)
+    ICloudOpenUrl,
+    ICloudAppleId,
+    ICloudPassword,
+    Done,
+}
+
+/// Which iCloud method was chosen
+#[derive(Debug, Clone, PartialEq)]
+pub enum ICloudMethod {
+    EventKit,
+    CalDav,
+}
+
+/// State for the interactive setup wizard
+pub struct SetupState {
+    pub step: SetupStep,
+    pub input: String,
+    pub google_client_id: Option<String>,
+    pub google_client_secret: Option<String>,
+    pub icloud_method: Option<ICloudMethod>,
+    pub icloud_apple_id: Option<String>,
+    pub icloud_password: Option<String>,
+    pub error: Option<String>,
+    pub eventkit_available: bool,
+}
+
+impl SetupState {
+    pub fn new() -> Self {
+        Self {
+            step: SetupStep::Welcome,
+            input: String::new(),
+            google_client_id: None,
+            google_client_secret: None,
+            icloud_method: None,
+            icloud_apple_id: None,
+            icloud_password: None,
+            error: None,
+            eventkit_available: false,
+        }
+    }
+}
+
 /// Navigation mode for two-level navigation in month view
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum NavigationMode {
@@ -53,7 +105,6 @@ pub struct App {
     pub current_date: NaiveDate,
     pub selected_date: NaiveDate,
     pub show_logs: bool,
-    pub show_weekends: bool,
     pub events: EventCache,
     pub google_auth: GoogleAuthState,
     pub icloud_auth: ICloudAuthState,
@@ -72,6 +123,8 @@ pub struct App {
     pub dirty: bool,
     /// Tracks the last minute we rendered, so the countdown timer triggers a re-render each minute
     pub last_render_minute: u32,
+    /// Interactive setup wizard state (None = not in setup mode)
+    pub setup: Option<SetupState>,
 }
 
 impl App {
@@ -84,7 +137,6 @@ impl App {
             current_date: today,
             selected_date: today,
             show_logs: false,
-            show_weekends: false,
             events,
             google_auth: GoogleAuthState::NotConfigured,
             icloud_auth: ICloudAuthState::NotConfigured,
@@ -102,6 +154,7 @@ impl App {
             search: None,
             dirty: true,
             last_render_minute: Local::now().minute(),
+            setup: None,
         };
 
         app.enter_event_mode();

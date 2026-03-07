@@ -4,6 +4,7 @@ mod cache;
 mod config;
 mod conversion;
 mod error;
+mod eventkit;
 mod google;
 mod icloud;
 mod logging;
@@ -11,7 +12,7 @@ mod setup;
 mod ui;
 mod utils;
 
-use app::{App, NavigationMode, PendingAction};
+use app::{App, ICloudMethod, NavigationMode, PendingAction, SetupState, SetupStep};
 use auth::{CalendarEntry, GoogleAuthState, ICloudAuthState};
 use cache::{DisplayEvent, EventId};
 use conversion::{google_event_to_display, icloud_event_to_display};
@@ -52,6 +53,10 @@ enum AsyncMessage {
     ICloudDiscoveryError(String),
     ICloudEvents(Vec<(ICalEvent, Option<String>)>, NaiveDate), // Events with calendar name
     ICloudFetchError(String),
+
+    // EventKit messages
+    EventKitEvents(Vec<cache::DisplayEvent>, NaiveDate),
+    EventKitError(String),
 
     // Event action messages
     EventActionSuccess(String), // Success message
@@ -97,29 +102,37 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    if app.config.icloud.is_some() {
-        app.icloud_auth = ICloudAuthState::NotAuthenticated;
-        // Try to load saved iCloud discovery info
-        if let Ok(Some(icloud_tokens)) = config::load_icloud_tokens() {
-            // Use new calendars field if available, fall back to legacy calendar_urls
-            let calendars: Vec<CalendarEntry> = if !icloud_tokens.calendars.is_empty() {
-                icloud_tokens.calendars.into_iter()
-                    .map(|c| CalendarEntry { url: c.url, name: c.name })
-                    .collect()
-            } else {
-                icloud_tokens.calendar_urls.into_iter()
-                    .map(|url| CalendarEntry { url, name: None })
-                    .collect()
-            };
-            if !calendars.is_empty() {
-                app.icloud_auth = ICloudAuthState::Authenticated { calendars };
-                app.icloud_needs_fetch = true;
+    if let Some(ref icloud_config) = app.config.icloud {
+        if icloud_config.is_eventkit() {
+            // EventKit: no discovery needed, macOS handles auth
+            app.icloud_auth = ICloudAuthState::Authenticated { calendars: vec![] };
+            app.icloud_needs_fetch = true;
+        } else {
+            app.icloud_auth = ICloudAuthState::NotAuthenticated;
+            // Try to load saved iCloud discovery info
+            if let Ok(Some(icloud_tokens)) = config::load_icloud_tokens() {
+                // Use new calendars field if available, fall back to legacy calendar_urls
+                let calendars: Vec<CalendarEntry> = if !icloud_tokens.calendars.is_empty() {
+                    icloud_tokens.calendars.into_iter()
+                        .map(|c| CalendarEntry { url: c.url, name: c.name })
+                        .collect()
+                } else {
+                    icloud_tokens.calendar_urls.into_iter()
+                        .map(|url| CalendarEntry { url, name: None })
+                        .collect()
+                };
+                if !calendars.is_empty() {
+                    app.icloud_auth = ICloudAuthState::Authenticated { calendars };
+                    app.icloud_needs_fetch = true;
+                }
             }
         }
     }
 
     if app.config.google.is_none() && app.config.icloud.is_none() {
-        app.set_status("No calendars configured. Edit ~/.config/calendarchy/config.json");
+        let mut setup = SetupState::new();
+        setup.eventkit_available = eventkit::is_available();
+        app.setup = Some(setup);
     }
 
     // Channel for async messages
@@ -176,9 +189,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 selected_source: app.selected_source,
                 selected_event_index: app.selected_event_index,
                 show_logs: app.show_logs,
-                show_weekends: app.show_weekends,
                 pending_action: app.pending_action.as_ref(),
                 search: app.search.as_ref(),
+                setup: app.setup.as_ref(),
             };
             ui::render(&render_state);
         }
@@ -195,6 +208,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     let tx = tx.clone();
 
                     app.google_loading = true;
+                    app.dirty = true;
                     let calendar_id_clone = calendar_id.clone();
                     tokio::spawn(async move {
                         let client = CalendarClient::new();
@@ -220,29 +234,53 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let (start, end) = app.month_range();
                 if !app.events.icloud.has_month(start)
                     && let Some(ref icloud_config) = app.config.icloud {
-                        let auth = ICloudAuth::new(icloud_config.clone());
-                        let client = CalDavClient::new(auth);
-                        let calendars = calendars.clone();
-                        let tx = tx.clone();
-
                         app.icloud_loading = true;
-                        tokio::spawn(async move {
-                            let mut all_events: Vec<(ICalEvent, Option<String>)> = Vec::new();
-                            for cal in &calendars {
-                                match client.fetch_events(&cal.url, start, end).await {
-                                    Ok(events) => {
-                                        for e in events {
-                                            all_events.push((e, cal.name.clone()));
-                                        }
+                        app.dirty = true;
+
+                        if icloud_config.is_eventkit() {
+                            // EventKit: run in blocking task since it shells out
+                            let tx = tx.clone();
+                            tokio::spawn(async move {
+                                let result = tokio::task::spawn_blocking(move || {
+                                    eventkit::fetch_events(start, end)
+                                }).await;
+                                match result {
+                                    Ok(Ok(events)) => {
+                                        let _ = tx.send(AsyncMessage::EventKitEvents(events, start)).await;
+                                    }
+                                    Ok(Err(e)) => {
+                                        let _ = tx.send(AsyncMessage::EventKitError(e)).await;
                                     }
                                     Err(e) => {
-                                        let _ = tx.send(AsyncMessage::ICloudFetchError(e.to_string())).await;
-                                        return;
+                                        let _ = tx.send(AsyncMessage::EventKitError(e.to_string())).await;
                                     }
                                 }
-                            }
-                            let _ = tx.send(AsyncMessage::ICloudEvents(all_events, start)).await;
-                        });
+                            });
+                        } else {
+                            // CalDAV
+                            let auth = ICloudAuth::new(icloud_config.clone());
+                            let client = CalDavClient::new(auth);
+                            let calendars = calendars.clone();
+                            let tx = tx.clone();
+
+                            tokio::spawn(async move {
+                                let mut all_events: Vec<(ICalEvent, Option<String>)> = Vec::new();
+                                for cal in &calendars {
+                                    match client.fetch_events(&cal.url, start, end).await {
+                                        Ok(events) => {
+                                            for e in events {
+                                                all_events.push((e, cal.name.clone()));
+                                            }
+                                        }
+                                        Err(e) => {
+                                            let _ = tx.send(AsyncMessage::ICloudFetchError(e.to_string())).await;
+                                            return;
+                                        }
+                                    }
+                                }
+                                let _ = tx.send(AsyncMessage::ICloudEvents(all_events, start)).await;
+                            });
+                        }
                     }
             }
             app.icloud_needs_fetch = false;
@@ -329,6 +367,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     app.icloud_loading = false;
                 }
 
+                // EventKit messages
+                AsyncMessage::EventKitEvents(events, month_date) => {
+                    app.events.icloud.store(events, month_date);
+                    app.events.save_to_disk();
+                    app.icloud_loading = false;
+                }
+                AsyncMessage::EventKitError(msg) => {
+                    app.set_status(format!("EventKit: {}", msg));
+                    app.icloud_loading = false;
+                }
+
                 // Event action messages
                 AsyncMessage::EventActionSuccess(msg) => {
                     app.set_status(msg);
@@ -386,6 +435,26 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
                 Event::Key(key_event) if key_event.kind == KeyEventKind::Press => {
                     app.dirty = true;
+                    // Handle interactive setup wizard
+                    if app.setup.is_some() {
+                        match handle_setup_input(&mut app, key_event.code) {
+                            SetupAction::Continue => {}
+                            SetupAction::Quit => break,
+                            SetupAction::Finished => {
+                                // Reload config and initialize auth states
+                                app.config = Config::load().unwrap_or_default();
+                                app.setup = None;
+                                if app.config.google.is_some() {
+                                    app.google_auth = GoogleAuthState::NotAuthenticated;
+                                }
+                                if app.config.icloud.is_some() {
+                                    app.icloud_auth = ICloudAuthState::NotAuthenticated;
+                                }
+                            }
+                        }
+                        continue;
+                    }
+
                     // Handle search mode input first
                     if app.search.is_some() {
                         match key_event.code {
@@ -606,9 +675,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             (KeyCode::Char('f') | KeyCode::Char('ф'), _) => {
                                 app.open_search();
                             }
-                            (KeyCode::Char('w') | KeyCode::Char('ц'), _) => {
-                                app.show_weekends = !app.show_weekends;
-                            }
                             (KeyCode::Char('1'), _) => {
                                 open_url("https://calendar.google.com");
                             }
@@ -660,10 +726,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         }
                         (KeyCode::Char('f') | KeyCode::Char('ф'), _) => {
                             app.open_search();
-                        }
-                        (KeyCode::Char('w') | KeyCode::Char('ц'), _) => {
-                            // Toggle weekend visibility
-                            app.show_weekends = !app.show_weekends;
                         }
                         (KeyCode::Char('1'), _) => {
                             open_url("https://calendar.google.com");
@@ -743,4 +805,212 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     execute!(stdout(), LeaveAlternateScreen, cursor::Show)?;
 
     Ok(())
+}
+
+enum SetupAction {
+    Continue,
+    Quit,
+    Finished,
+}
+
+fn handle_setup_input(app: &mut App, key: KeyCode) -> SetupAction {
+    let setup = app.setup.as_mut().unwrap();
+    setup.error = None;
+
+    match setup.step {
+        SetupStep::Welcome => match key {
+            KeyCode::Enter => { setup.step = SetupStep::GoogleAsk; }
+            KeyCode::Char('q') | KeyCode::Esc => return SetupAction::Quit,
+            _ => {}
+        },
+        SetupStep::GoogleAsk => match key {
+            KeyCode::Char('y') | KeyCode::Char('Y') | KeyCode::Enter => {
+                setup.step = SetupStep::GoogleOpenUrl;
+                open_url("https://console.cloud.google.com/apis/credentials");
+            }
+            KeyCode::Char('n') | KeyCode::Char('N') => {
+                setup.step = SetupStep::ICloudAsk;
+            }
+            KeyCode::Esc => { setup.step = SetupStep::Welcome; }
+            _ => {}
+        },
+        SetupStep::GoogleOpenUrl => match key {
+            KeyCode::Enter => { setup.step = SetupStep::GoogleClientId; }
+            KeyCode::Esc => { setup.step = SetupStep::GoogleAsk; }
+            _ => {}
+        },
+        SetupStep::GoogleClientId => match key {
+            KeyCode::Enter => {
+                let val = setup.input.trim().to_string();
+                if val.is_empty() {
+                    setup.error = Some("Client ID cannot be empty".to_string());
+                } else {
+                    setup.google_client_id = Some(val);
+                    setup.input.clear();
+                    setup.step = SetupStep::GoogleSecret;
+                }
+            }
+            KeyCode::Esc => {
+                setup.input.clear();
+                setup.step = SetupStep::GoogleOpenUrl;
+            }
+            KeyCode::Backspace => { setup.input.pop(); }
+            KeyCode::Char(c) => { setup.input.push(c); }
+            _ => {}
+        },
+        SetupStep::GoogleSecret => match key {
+            KeyCode::Enter => {
+                let val = setup.input.trim().to_string();
+                if val.is_empty() {
+                    setup.error = Some("Client Secret cannot be empty".to_string());
+                } else {
+                    setup.google_client_secret = Some(val);
+                    setup.input.clear();
+                    setup.step = SetupStep::ICloudAsk;
+                }
+            }
+            KeyCode::Esc => {
+                setup.input.clear();
+                setup.step = SetupStep::GoogleClientId;
+            }
+            KeyCode::Backspace => { setup.input.pop(); }
+            KeyCode::Char(c) => { setup.input.push(c); }
+            _ => {}
+        },
+        SetupStep::ICloudAsk => match key {
+            KeyCode::Char('y') | KeyCode::Char('Y') | KeyCode::Enter => {
+                if setup.eventkit_available {
+                    setup.step = SetupStep::ICloudMethod;
+                } else {
+                    setup.step = SetupStep::ICloudOpenUrl;
+                    open_url("https://appleid.apple.com/account/manage");
+                }
+            }
+            KeyCode::Char('n') | KeyCode::Char('N') => {
+                setup.step = SetupStep::Done;
+            }
+            KeyCode::Esc => {
+                if setup.google_client_id.is_some() {
+                    setup.step = SetupStep::GoogleSecret;
+                } else {
+                    setup.step = SetupStep::GoogleAsk;
+                }
+            }
+            _ => {}
+        },
+        SetupStep::ICloudMethod => match key {
+            KeyCode::Char('1') | KeyCode::Enter => {
+                // EventKit - zero config, done
+                setup.icloud_method = Some(ICloudMethod::EventKit);
+                setup.step = SetupStep::Done;
+            }
+            KeyCode::Char('2') => {
+                // CalDAV - need credentials
+                setup.icloud_method = Some(ICloudMethod::CalDav);
+                setup.step = SetupStep::ICloudOpenUrl;
+                open_url("https://appleid.apple.com/account/manage");
+            }
+            KeyCode::Esc => { setup.step = SetupStep::ICloudAsk; }
+            _ => {}
+        },
+        SetupStep::ICloudOpenUrl => match key {
+            KeyCode::Enter => { setup.step = SetupStep::ICloudAppleId; }
+            KeyCode::Esc => {
+                if setup.eventkit_available {
+                    setup.step = SetupStep::ICloudMethod;
+                } else {
+                    setup.step = SetupStep::ICloudAsk;
+                }
+            }
+            _ => {}
+        },
+        SetupStep::ICloudAppleId => match key {
+            KeyCode::Enter => {
+                let val = setup.input.trim().to_string();
+                if val.is_empty() {
+                    setup.error = Some("Apple ID cannot be empty".to_string());
+                } else {
+                    setup.icloud_apple_id = Some(val);
+                    setup.input.clear();
+                    setup.step = SetupStep::ICloudPassword;
+                }
+            }
+            KeyCode::Esc => {
+                setup.input.clear();
+                setup.step = SetupStep::ICloudOpenUrl;
+            }
+            KeyCode::Backspace => { setup.input.pop(); }
+            KeyCode::Char(c) => { setup.input.push(c); }
+            _ => {}
+        },
+        SetupStep::ICloudPassword => match key {
+            KeyCode::Enter => {
+                let val = setup.input.trim().to_string();
+                if val.is_empty() {
+                    setup.error = Some("App password cannot be empty".to_string());
+                } else {
+                    setup.icloud_password = Some(val);
+                    setup.input.clear();
+                    setup.step = SetupStep::Done;
+                }
+            }
+            KeyCode::Esc => {
+                setup.input.clear();
+                setup.step = SetupStep::ICloudAppleId;
+            }
+            KeyCode::Backspace => { setup.input.pop(); }
+            KeyCode::Char(c) => { setup.input.push(c); }
+            _ => {}
+        },
+        SetupStep::Done => {}
+    }
+
+    // Save config when we reach Done
+    if setup.step == SetupStep::Done {
+        let has_google = setup.google_client_id.is_some();
+        let has_eventkit = setup.icloud_method == Some(ICloudMethod::EventKit);
+        let has_caldav = setup.icloud_apple_id.is_some();
+
+        if !has_google && !has_eventkit && !has_caldav {
+            setup.error = Some("Set up at least one calendar".to_string());
+            setup.step = SetupStep::GoogleAsk;
+            return SetupAction::Continue;
+        }
+
+        let mut config = Config::default();
+        if let (Some(client_id), Some(client_secret)) =
+            (setup.google_client_id.take(), setup.google_client_secret.take())
+        {
+            config.google = Some(config::GoogleConfig {
+                client_id,
+                client_secret,
+                calendar_id: "primary".to_string(),
+            });
+        }
+        if has_eventkit {
+            config.icloud = Some(config::ICloudConfig {
+                method: "eventkit".to_string(),
+                apple_id: None,
+                app_password: None,
+            });
+        } else if let (Some(apple_id), Some(app_password)) =
+            (setup.icloud_apple_id.take(), setup.icloud_password.take())
+        {
+            config.icloud = Some(config::ICloudConfig {
+                method: "caldav".to_string(),
+                apple_id: Some(apple_id),
+                app_password: Some(app_password),
+            });
+        }
+
+        if let Err(e) = config.save() {
+            setup.error = Some(format!("Failed to save config: {}", e));
+            setup.step = SetupStep::GoogleAsk;
+            return SetupAction::Continue;
+        }
+
+        return SetupAction::Finished;
+    }
+
+    SetupAction::Continue
 }

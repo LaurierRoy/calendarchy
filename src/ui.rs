@@ -1,4 +1,4 @@
-use crate::app::{EventSource, MatchType, NavigationMode, PendingAction, SearchState};
+use crate::app::{EventSource, MatchType, NavigationMode, PendingAction, SearchState, SetupState, SetupStep};
 use crate::auth::{AuthDisplay, GoogleAuthState, ICloudAuthState};
 use crate::cache::{AttendeeStatus, DisplayEvent, EventCache, EventId};
 use crate::logging::get_recent_logs;
@@ -11,31 +11,10 @@ use crossterm::{
 };
 use std::collections::HashSet;
 use std::io::{stdout, Write};
-use std::sync::Mutex;
 
-const CALENDAR_WIDTH_WITH_WEEKENDS: u16 = 23;
-const CALENDAR_WIDTH_NO_WEEKENDS: u16 = 19;
+const CALENDAR_WIDTH: u16 = 23;
 const MIN_PANEL_WIDTH: u16 = 25;
 
-fn calendar_width(show_weekends: bool) -> u16 {
-    if show_weekends { CALENDAR_WIDTH_WITH_WEEKENDS } else { CALENDAR_WIDTH_NO_WEEKENDS }
-}
-
-// Track previous render state to avoid unnecessary clearing
-#[derive(Default)]
-struct PrevRenderState {
-    selected_date: Option<NaiveDate>,
-    selected_source: Option<EventSource>,
-    selected_event_index: Option<usize>,
-    navigation_mode: Option<NavigationMode>,
-}
-
-static PREV_STATE: Mutex<PrevRenderState> = Mutex::new(PrevRenderState {
-    selected_date: None,
-    selected_source: None,
-    selected_event_index: None,
-    navigation_mode: None,
-});
 
 // Semantic color constants
 mod colors {
@@ -99,7 +78,6 @@ pub struct RenderState<'a> {
     pub current_date: NaiveDate,
     pub selected_date: NaiveDate,
     pub show_logs: bool,
-    pub show_weekends: bool,
     pub events: &'a EventCache,
     pub google_auth: &'a GoogleAuthState,
     pub icloud_auth: &'a ICloudAuthState,
@@ -114,6 +92,8 @@ pub struct RenderState<'a> {
     pub pending_action: Option<&'a PendingAction>,
     // Search state
     pub search: Option<&'a SearchState>,
+    // Setup wizard
+    pub setup: Option<&'a SetupState>,
 }
 
 /// Information about an upcoming event for the countdown display
@@ -222,12 +202,20 @@ pub fn render(state: &RenderState) {
     // Get terminal size
     let (term_width, term_height) = terminal::size().unwrap_or((80, 24));
 
+    // Setup wizard takes over the whole screen
+    if let Some(setup) = state.setup {
+        execute!(out, Clear(ClearType::All), cursor::MoveTo(0, 0)).unwrap();
+        render_setup_wizard(&mut out, setup, term_width, term_height);
+        out.flush().unwrap();
+        return;
+    }
+
     // When search modal is active, skip redrawing underlying content to avoid flicker
     if let Some(search) = state.search {
         render_search_modal(&mut out, search, term_width, term_height);
     } else {
-        // Move to home position instead of clearing (alternate screen handles buffer)
-        execute!(out, cursor::MoveTo(0, 0)).unwrap();
+        // Clear and move to home position
+        execute!(out, Clear(ClearType::All), cursor::MoveTo(0, 0)).unwrap();
 
         // Month view handles both normal and day timeline modes
         render_month_view(&mut out, state, today, term_width, term_height);
@@ -320,7 +308,7 @@ fn render_month_view(out: &mut impl Write, state: &RenderState, today: NaiveDate
     let events_panel_width: u16;
     let details_panel_width: u16;
 
-    let cal_width = calendar_width(state.show_weekends);
+    let cal_width = CALENDAR_WIDTH;
 
     if in_event_mode {
         let available = term_width.saturating_sub(cal_width + 2);
@@ -336,27 +324,11 @@ fn render_month_view(out: &mut impl Write, state: &RenderState, today: NaiveDate
     let header_rows = 2u16;
 
     // Render calendar on left
-    render_calendar(out, state.current_date, state.selected_date, today, state.events, state.google_loading || state.icloud_loading, state.show_weekends);
-
-    // Check if we need to clear (only when state changes)
-    let needs_clear = {
-        let prev = PREV_STATE.lock().unwrap();
-        prev.selected_date != Some(state.selected_date)
-            || prev.selected_source != Some(state.selected_source)
-            || prev.selected_event_index != Some(state.selected_event_index)
-            || prev.navigation_mode != Some(state.navigation_mode)
-    };
+    render_calendar(out, state.current_date, state.selected_date, today, state.events, state.google_loading || state.icloud_loading);
 
     // Render event panels in the middle
     if events_panel_width >= MIN_PANEL_WIDTH {
         let events_x = cal_width + 1;
-
-        // Clear the events panel area only when content changes
-        if needs_clear {
-            for row in 0..term_height.saturating_sub(2) {
-                execute!(out, cursor::MoveTo(events_x, row), Clear(ClearType::UntilNewLine)).unwrap();
-            }
-        }
 
         // Events column header: selected date
         execute!(out, cursor::MoveTo(events_x, 0)).unwrap();
@@ -428,12 +400,6 @@ fn render_month_view(out: &mut impl Write, state: &RenderState, today: NaiveDate
         let details_x = cal_width + events_panel_width + 2;
         let details_height = term_height.saturating_sub(3);
 
-        // Clear the details panel area only when content changes
-        if needs_clear {
-            for row in 0..term_height.saturating_sub(2) {
-                execute!(out, cursor::MoveTo(details_x, row), Clear(ClearType::UntilNewLine)).unwrap();
-            }
-        }
 
         // Get the selected event
         let selected_event = match state.selected_source {
@@ -444,14 +410,6 @@ fn render_month_view(out: &mut impl Write, state: &RenderState, today: NaiveDate
         render_event_details_column(out, details_x, 0, details_panel_width, details_height, selected_event);
     }
 
-    // Update previous state
-    {
-        let mut prev = PREV_STATE.lock().unwrap();
-        prev.selected_date = Some(state.selected_date);
-        prev.selected_source = Some(state.selected_source);
-        prev.selected_event_index = Some(state.selected_event_index);
-        prev.navigation_mode = Some(state.navigation_mode);
-    }
 }
 
 fn render_calendar(
@@ -461,7 +419,6 @@ fn render_calendar(
     today: NaiveDate,
     events: &EventCache,
     is_loading: bool,
-    show_weekends: bool,
 ) {
     execute!(out, cursor::MoveTo(0, 0)).unwrap();
 
@@ -473,7 +430,7 @@ fn render_calendar(
     )
     .unwrap();
 
-    let cal_width = calendar_width(show_weekends);
+    let cal_width = CALENDAR_WIDTH;
     let loading_indicator = if is_loading { " *" } else { "" };
     let header = format!(
         "{} {}{}",
@@ -490,18 +447,14 @@ fn render_calendar(
     // Weekday header
     execute!(out, cursor::MoveTo(0, 2)).unwrap();
     execute!(out, SetForegroundColor(Color::DarkGrey)).unwrap();
-    if show_weekends {
-        print!("Mo Tu We Th Fr Sa Su");
-    } else {
-        print!("Mo Tu We Th Fr");
-    }
+    print!("Mo Tu We Th Fr Sa Su");
     execute!(out, ResetColor).unwrap();
 
     // Calendar grid
     let first_day = current_date.with_day(1).unwrap();
     let start_weekday = first_day.weekday().num_days_from_monday();
     let days_in_month = days_in_month(current_date);
-    let cols = if show_weekends { 7 } else { 5 };
+    let cols = 7;
 
     for row in 0..6 {
         execute!(out, cursor::MoveTo(0, 3 + row as u16)).unwrap();
@@ -532,7 +485,7 @@ fn render_calendar(
                         SetAttribute(Attribute::Bold)
                     )
                     .unwrap();
-                } else if is_weekend && show_weekends {
+                } else if is_weekend {
                     execute!(out, SetForegroundColor(Color::DarkGrey)).unwrap();
                 }
 
@@ -548,7 +501,7 @@ fn render_calendar(
     }
 
     // Render week availability below the calendar grid
-    render_week_availability(out, events, selected_date, show_weekends);
+    render_week_availability(out, events, selected_date);
 }
 
 /// Parse an event's time range into (start_minutes, end_minutes) from midnight.
@@ -649,7 +602,6 @@ fn render_week_availability(
     out: &mut impl Write,
     events: &EventCache,
     selected_date: NaiveDate,
-    show_weekends: bool,
 ) {
     let start_row = 10u16; // Below the calendar grid
     let monday = get_week_monday(selected_date);
@@ -658,16 +610,12 @@ fn render_week_availability(
         let now = Local::now().time();
         now.hour() * 60 + now.minute()
     };
-    let num_days = if show_weekends { 7 } else { 5 };
+    let num_days = 7;
 
     // Header row
     execute!(out, cursor::MoveTo(0, start_row)).unwrap();
     execute!(out, SetForegroundColor(Color::DarkGrey)).unwrap();
-    if show_weekends {
-        print!("    M  T  W  T  F  S  S");
-    } else {
-        print!("    M  T  W  T  F");
-    }
+    print!("    M  T  W  T  F  S  S");
     execute!(out, ResetColor).unwrap();
 
     // Render each hour row (8am - 7pm = 12 rows)
@@ -1122,6 +1070,193 @@ fn format_smart_when(date: NaiveDate, time_str: &str, today: NaiveDate) -> Strin
         if is_all_day { weekday } else { format!("{} {}", weekday, time_str) }
     } else {
         date.format("%b %d").to_string()
+    }
+}
+
+/// Render the interactive setup wizard
+fn render_setup_wizard(out: &mut impl Write, setup: &SetupState, term_width: u16, term_height: u16) {
+    // Collect lines to render: (text, style)
+    enum Style { Header, Normal, Dim, Accent, Error }
+
+    let mut lines: Vec<(&str, Style)> = Vec::new();
+    let mut input_line: Option<String> = None;
+
+    match setup.step {
+        SetupStep::Welcome => {
+            lines.push(("Calendarchy", Style::Header));
+            lines.push(("", Style::Normal));
+            lines.push(("No calendars configured yet.", Style::Normal));
+            lines.push(("This wizard will guide you through the setup.", Style::Normal));
+            lines.push(("", Style::Normal));
+            lines.push(("Press Enter to start, q to quit.", Style::Dim));
+        }
+        SetupStep::GoogleAsk => {
+            lines.push(("Google Calendar Setup", Style::Header));
+            lines.push(("", Style::Normal));
+            lines.push(("Google Calendar requires an OAuth Client ID.", Style::Normal));
+            lines.push(("You'll need to create one in Google Cloud Console.", Style::Normal));
+            lines.push(("", Style::Normal));
+            lines.push(("Set up Google Calendar? (y/n)", Style::Accent));
+        }
+        SetupStep::GoogleOpenUrl => {
+            lines.push(("Google Calendar Setup", Style::Header));
+            lines.push(("", Style::Normal));
+            lines.push(("A browser window should have opened to:", Style::Normal));
+            lines.push(("Google Cloud Console > APIs & Credentials", Style::Accent));
+            lines.push(("", Style::Normal));
+            lines.push(("Follow these steps:", Style::Normal));
+            lines.push(("1. Create a project (or select an existing one)", Style::Normal));
+            lines.push(("2. Click + CREATE CREDENTIALS > OAuth client ID", Style::Normal));
+            lines.push(("3. Choose application type: TVs and Limited Input devices", Style::Normal));
+            lines.push(("4. Copy the Client ID and Client Secret", Style::Normal));
+            lines.push(("", Style::Normal));
+            lines.push(("Also enable the Google Calendar API:", Style::Normal));
+            lines.push(("5. Go to APIs & Services > Library", Style::Normal));
+            lines.push(("6. Search for \"Google Calendar API\" and enable it", Style::Normal));
+            lines.push(("", Style::Normal));
+            lines.push(("Press Enter when ready to paste credentials.", Style::Dim));
+        }
+        SetupStep::GoogleClientId => {
+            lines.push(("Google Calendar Setup", Style::Header));
+            lines.push(("", Style::Normal));
+            lines.push(("Paste your Client ID:", Style::Normal));
+            input_line = Some(format!("> {}_", setup.input));
+        }
+        SetupStep::GoogleSecret => {
+            lines.push(("Google Calendar Setup", Style::Header));
+            lines.push(("", Style::Normal));
+            lines.push(("Paste your Client Secret:", Style::Normal));
+            input_line = Some(format!("> {}_", setup.input));
+        }
+        SetupStep::ICloudAsk => {
+            lines.push(("iCloud Calendar Setup", Style::Header));
+            lines.push(("", Style::Normal));
+            if setup.google_client_id.is_some() {
+                lines.push(("Google Calendar configured!", Style::Accent));
+                lines.push(("", Style::Normal));
+            }
+            lines.push(("Set up iCloud / personal calendar? (y/n)", Style::Accent));
+        }
+        SetupStep::ICloudMethod => {
+            lines.push(("iCloud Calendar Setup", Style::Header));
+            lines.push(("", Style::Normal));
+            lines.push(("Choose how to connect:", Style::Normal));
+            lines.push(("", Style::Normal));
+            lines.push(("1. System Calendars (recommended)", Style::Accent));
+            lines.push(("   Reads from macOS Calendar app. Zero configuration.", Style::Normal));
+            lines.push(("   Includes all calendars you've added in System Settings.", Style::Normal));
+            lines.push(("", Style::Normal));
+            lines.push(("2. CalDAV (manual setup)", Style::Dim));
+            lines.push(("   Connect directly with Apple ID + app-specific password.", Style::Normal));
+            lines.push(("   Works on Linux. Only shows iCloud calendars.", Style::Normal));
+            lines.push(("", Style::Normal));
+            lines.push(("Press 1 or 2 to choose.", Style::Dim));
+        }
+        SetupStep::ICloudOpenUrl => {
+            lines.push(("iCloud Calendar Setup", Style::Header));
+            lines.push(("", Style::Normal));
+            lines.push(("A browser window should have opened to:", Style::Normal));
+            lines.push(("Apple ID > Account Management", Style::Accent));
+            lines.push(("", Style::Normal));
+            lines.push(("Follow these steps:", Style::Normal));
+            lines.push(("1. Sign in to your Apple ID", Style::Normal));
+            lines.push(("2. Go to App-Specific Passwords", Style::Normal));
+            lines.push(("3. Generate a new password (name it \"Calendarchy\")", Style::Normal));
+            lines.push(("4. Copy the generated password (xxxx-xxxx-xxxx-xxxx)", Style::Normal));
+            lines.push(("", Style::Normal));
+            lines.push(("Press Enter when ready to paste credentials.", Style::Dim));
+        }
+        SetupStep::ICloudAppleId => {
+            lines.push(("iCloud Calendar Setup", Style::Header));
+            lines.push(("", Style::Normal));
+            lines.push(("Enter your Apple ID (email):", Style::Normal));
+            input_line = Some(format!("> {}_", setup.input));
+        }
+        SetupStep::ICloudPassword => {
+            lines.push(("iCloud Calendar Setup", Style::Header));
+            lines.push(("", Style::Normal));
+            lines.push(("Paste your app-specific password:", Style::Normal));
+            let masked: String = setup.input.chars().map(|_| '*').collect();
+            input_line = Some(format!("> {}_", masked));
+        }
+        SetupStep::Done => {}
+    }
+
+    // Add input line
+    if let Some(ref il) = input_line {
+        lines.push(("", Style::Normal)); // placeholder, we'll render input_line specially
+        // The actual input will be rendered in place of the last line
+        let _ = il; // used below
+    }
+
+    // Add error if any
+    if setup.error.is_some() {
+        lines.push(("", Style::Normal));
+        lines.push(("", Style::Error)); // placeholder for error
+    }
+
+    // Calculate vertical centering
+    let total_lines = lines.len() as u16;
+    let start_y = term_height.saturating_sub(total_lines) / 2;
+    let max_content_width = 60u16;
+    let base_x = (term_width.saturating_sub(max_content_width)) / 2;
+
+    let mut input_rendered = false;
+    for (i, (text, style)) in lines.iter().enumerate() {
+        let row = start_y + i as u16;
+        if row >= term_height { break; }
+
+        execute!(out, cursor::MoveTo(base_x, row)).unwrap();
+
+        // Check if this is the input line placeholder
+        if !input_rendered {
+            if let Some(ref il) = input_line {
+                if text.is_empty() && matches!(style, Style::Normal) && i > 0 {
+                    // Check if previous line was a prompt
+                    let prev = &lines[i - 1];
+                    if matches!(prev.1, Style::Normal) && (prev.0.contains("Paste") || prev.0.contains("Enter")) {
+                        execute!(out, SetForegroundColor(Color::White)).unwrap();
+                        let display = truncate_str(il, max_content_width as usize);
+                        print!("{}", display);
+                        execute!(out, ResetColor).unwrap();
+                        input_rendered = true;
+                        continue;
+                    }
+                }
+            }
+        }
+
+        // Check if this is the error placeholder
+        if matches!(style, Style::Error) {
+            if let Some(ref err) = setup.error {
+                execute!(out, SetForegroundColor(Color::Red)).unwrap();
+                print!("{}", err);
+                execute!(out, ResetColor).unwrap();
+                continue;
+            }
+        }
+
+        match style {
+            Style::Header => {
+                execute!(out, SetForegroundColor(colors::HEADER), SetAttribute(Attribute::Bold)).unwrap();
+                print!("{}", text);
+                execute!(out, ResetColor, SetAttribute(Attribute::Reset)).unwrap();
+            }
+            Style::Accent => {
+                execute!(out, SetForegroundColor(Color::Green)).unwrap();
+                print!("{}", text);
+                execute!(out, ResetColor).unwrap();
+            }
+            Style::Dim => {
+                execute!(out, SetForegroundColor(Color::DarkGrey)).unwrap();
+                print!("{}", text);
+                execute!(out, ResetColor).unwrap();
+            }
+            Style::Error => {} // handled above
+            Style::Normal => {
+                print!("{}", text);
+            }
+        }
     }
 }
 

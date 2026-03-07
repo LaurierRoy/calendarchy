@@ -26,8 +26,31 @@ pub struct GoogleConfig {
 /// iCloud Calendar configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ICloudConfig {
-    pub apple_id: String,
-    pub app_password: String,
+    /// "eventkit" (macOS, zero config) or "caldav" (cross-platform)
+    /// Defaults to "caldav" for backward compatibility
+    #[serde(default = "default_icloud_method")]
+    pub method: String,
+    /// Required for caldav method
+    #[serde(default)]
+    pub apple_id: Option<String>,
+    /// Required for caldav method
+    #[serde(default)]
+    pub app_password: Option<String>,
+}
+
+fn default_icloud_method() -> String {
+    "caldav".to_string()
+}
+
+impl ICloudConfig {
+    pub fn is_eventkit(&self) -> bool {
+        self.method == "eventkit"
+    }
+
+    #[allow(dead_code)]
+    pub fn is_caldav(&self) -> bool {
+        self.method == "caldav"
+    }
 }
 
 fn default_calendar_id() -> String {
@@ -95,6 +118,14 @@ impl Config {
         if !dir.exists() {
             fs::create_dir_all(&dir)?;
         }
+        Ok(())
+    }
+
+    pub fn save(&self) -> Result<()> {
+        Self::ensure_config_dir()?;
+        let path = Self::config_path();
+        let json = serde_json::to_string_pretty(self)?;
+        fs::write(&path, &json)?;
         Ok(())
     }
 }

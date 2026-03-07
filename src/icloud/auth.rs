@@ -13,7 +13,9 @@ impl ICloudAuth {
 
     /// Generate Basic auth header value
     pub fn auth_header(&self) -> String {
-        let credentials = format!("{}:{}", self.config.apple_id, self.config.app_password);
+        let apple_id = self.config.apple_id.as_deref().unwrap_or("");
+        let app_password = self.config.app_password.as_deref().unwrap_or("");
+        let credentials = format!("{}:{}", apple_id, app_password);
         let encoded = STANDARD.encode(credentials.as_bytes());
         format!("Basic {}", encoded)
     }
