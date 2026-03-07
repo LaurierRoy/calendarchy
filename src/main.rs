@@ -7,6 +7,7 @@ mod error;
 mod google;
 mod icloud;
 mod logging;
+mod setup;
 mod ui;
 mod utils;
 
@@ -14,13 +15,13 @@ use app::{App, NavigationMode, PendingAction};
 use auth::{CalendarEntry, GoogleAuthState, ICloudAuthState};
 use cache::{DisplayEvent, EventId};
 use conversion::{google_event_to_display, icloud_event_to_display};
-use chrono::{DateTime, NaiveDate, Utc};
+use chrono::{DateTime, NaiveDate, Timelike, Utc};
 use config::Config;
 use crossterm::{
     cursor,
     event::{self, Event, KeyCode, KeyEventKind, KeyModifiers},
     execute,
-    terminal::{disable_raw_mode, enable_raw_mode, Clear, ClearType, EnterAlternateScreen, LeaveAlternateScreen},
+    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
 use google::{CalendarClient, GoogleAuth, TokenInfo};
 use icloud::{CalDavClient, ICalEvent, ICloudAuth};
@@ -62,6 +63,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     if std::env::args().any(|a| a == "--version" || a == "-V") {
         println!("calendarchy {}", env!("CARGO_PKG_VERSION"));
         return Ok(());
+    }
+
+    if std::env::args().any(|a| a == "--setup") {
+        return setup::run_setup();
+    }
+
+    if std::env::args().any(|a| a == "--remove-setup") {
+        return setup::remove_setup();
     }
 
     let mut app = App::new();
@@ -140,27 +149,39 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Main loop
     loop {
         // Clear expired status messages
-        app.clear_expired_status();
+        if app.clear_expired_status() {
+            app.dirty = true;
+        }
 
-        // Render
-        let render_state = ui::RenderState {
-            current_date: app.current_date,
-            selected_date: app.selected_date,
-            events: &app.events,
-            google_auth: &app.google_auth,
-            icloud_auth: &app.icloud_auth,
-            status_message: app.status_message.as_deref(),
-            google_loading: app.google_loading,
-            icloud_loading: app.icloud_loading,
-            navigation_mode: app.navigation_mode,
-            selected_source: app.selected_source,
-            selected_event_index: app.selected_event_index,
-            show_logs: app.show_logs,
-            show_weekends: app.show_weekends,
-            pending_action: app.pending_action.as_ref(),
-            search: app.search.as_ref(),
-        };
-        ui::render(&render_state);
+        // Re-render once per minute for the countdown timer
+        let now_minute = chrono::Local::now().minute();
+        if now_minute != app.last_render_minute {
+            app.last_render_minute = now_minute;
+            app.dirty = true;
+        }
+
+        // Render only when something changed
+        if app.dirty {
+            app.dirty = false;
+            let render_state = ui::RenderState {
+                current_date: app.current_date,
+                selected_date: app.selected_date,
+                events: &app.events,
+                google_auth: &app.google_auth,
+                icloud_auth: &app.icloud_auth,
+                status_message: app.status_message.as_deref(),
+                google_loading: app.google_loading,
+                icloud_loading: app.icloud_loading,
+                navigation_mode: app.navigation_mode,
+                selected_source: app.selected_source,
+                selected_event_index: app.selected_event_index,
+                show_logs: app.show_logs,
+                show_weekends: app.show_weekends,
+                pending_action: app.pending_action.as_ref(),
+                search: app.search.as_ref(),
+            };
+            ui::render(&render_state);
+        }
 
         // Check if we need to fetch Google events
         if app.google_needs_fetch {
@@ -229,6 +250,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         // Handle async messages (non-blocking)
         while let Ok(msg) = rx.try_recv() {
+            app.dirty = true;
             match msg {
                 // Google messages
                 AsyncMessage::GoogleDeviceCode {
@@ -360,20 +382,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         if event::poll(StdDuration::from_millis(100))? {
             match event::read()? {
                 Event::Resize(_, _) => {
-                    // Clear screen on resize - next loop iteration will re-render
-                    execute!(stdout(), Clear(ClearType::All)).ok();
+                    app.dirty = true;
                 }
                 Event::Key(key_event) if key_event.kind == KeyEventKind::Press => {
+                    app.dirty = true;
                     // Handle search mode input first
                     if app.search.is_some() {
                         match key_event.code {
                             KeyCode::Esc => {
                                 app.close_search();
-                                execute!(stdout(), Clear(ClearType::All)).ok();
                             }
                             KeyCode::Enter => {
                                 app.select_search_result();
-                                execute!(stdout(), Clear(ClearType::All)).ok();
                             }
                             KeyCode::Backspace => {
                                 if let Some(ref mut search) = app.search {
@@ -588,7 +608,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             }
                             (KeyCode::Char('w') | KeyCode::Char('ц'), _) => {
                                 app.show_weekends = !app.show_weekends;
-                                execute!(stdout(), Clear(ClearType::All)).ok();
                             }
                             (KeyCode::Char('1'), _) => {
                                 open_url("https://calendar.google.com");
@@ -645,7 +664,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         (KeyCode::Char('w') | KeyCode::Char('ц'), _) => {
                             // Toggle weekend visibility
                             app.show_weekends = !app.show_weekends;
-                            execute!(stdout(), Clear(ClearType::All)).ok();
                         }
                         (KeyCode::Char('1'), _) => {
                             open_url("https://calendar.google.com");

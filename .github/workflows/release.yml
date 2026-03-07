@@ -31,10 +31,15 @@ jobs:
       - name: Build
         run: cargo build --release --target ${{ matrix.target }}
 
+      - name: Build hotkey helper
+        run: swiftc -O swift/main.swift -o calendarchy-hotkey
+
       - name: Package
         run: |
-          cp target/${{ matrix.target }}/release/calendarchy .
-          tar czf calendarchy-${{ matrix.target }}.tar.gz calendarchy LICENSE
+          cp calendarchy-hotkey target/${{ matrix.target }}/release/
+          cd target/${{ matrix.target }}/release
+          tar czf ../../../calendarchy-${{ matrix.target }}.tar.gz calendarchy calendarchy-hotkey
+          cd ../../..
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -97,6 +102,7 @@ jobs:
 
             def install
               bin.install "calendarchy"
+              bin.install "calendarchy-hotkey"
             end
 
             test do

@@ -54,3 +54,19 @@ calendarchy
 ```
 
 Navigate with arrow keys. Events from both calendars are displayed in side-by-side panels.
+
+### Keyboard shortcut (macOS)
+
+Set up a global Cmd+Shift+J shortcut to launch Calendarchy from anywhere:
+
+```bash
+calendarchy --setup
+```
+
+This installs a background helper that listens for the hotkey and opens Calendarchy in your terminal. macOS will prompt for Accessibility permission on first use — grant it in System Settings > Privacy & Security > Accessibility.
+
+To remove the shortcut:
+
+```bash
+calendarchy --remove-setup
+```

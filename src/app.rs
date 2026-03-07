@@ -1,7 +1,7 @@
 use crate::auth::{GoogleAuthState, ICloudAuthState};
 use crate::cache::{DisplayEvent, EventCache};
 use crate::config::Config;
-use chrono::{Datelike, Duration, Local, NaiveDate, NaiveTime};
+use chrono::{Datelike, Duration, Local, NaiveDate, NaiveTime, Timelike};
 
 /// Search state for the interactive search modal
 pub struct SearchState {
@@ -69,6 +69,9 @@ pub struct App {
     pub selected_event_index: usize,
     pub pending_action: Option<PendingAction>,
     pub search: Option<SearchState>,
+    pub dirty: bool,
+    /// Tracks the last minute we rendered, so the countdown timer triggers a re-render each minute
+    pub last_render_minute: u32,
 }
 
 impl App {
@@ -97,6 +100,8 @@ impl App {
             selected_event_index: 0,
             pending_action: None,
             search: None,
+            dirty: true,
+            last_render_minute: Local::now().minute(),
         };
 
         app.enter_event_mode();
@@ -108,13 +113,15 @@ impl App {
         self.status_message_time = Some(std::time::Instant::now());
     }
 
-    pub fn clear_expired_status(&mut self) {
+    pub fn clear_expired_status(&mut self) -> bool {
         if let Some(time) = self.status_message_time
             && time.elapsed() > std::time::Duration::from_secs(3)
         {
             self.status_message = None;
             self.status_message_time = None;
+            return true;
         }
+        false
     }
 
     pub fn next_day(&mut self) {
