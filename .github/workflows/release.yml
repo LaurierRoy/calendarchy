@@ -1,0 +1,114 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - os: macos-14
+            target: aarch64-apple-darwin
+          - os: macos-13
+            target: x86_64-apple-darwin
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Build
+        run: cargo build --release --target ${{ matrix.target }}
+
+      - name: Package
+        run: |
+          cd target/${{ matrix.target }}/release
+          tar czf ../../../calendarchy-${{ matrix.target }}.tar.gz calendarchy
+          cd ../../..
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: calendarchy-${{ matrix.target }}
+          path: calendarchy-${{ matrix.target }}.tar.gz
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+
+      - name: Compute SHA256 hashes
+        id: hashes
+        run: |
+          echo "arm64_sha256=$(sha256sum calendarchy-aarch64-apple-darwin.tar.gz | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+          echo "x86_64_sha256=$(sha256sum calendarchy-x86_64-apple-darwin.tar.gz | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: |
+            calendarchy-aarch64-apple-darwin.tar.gz
+            calendarchy-x86_64-apple-darwin.tar.gz
+
+      - name: Update Homebrew formula
+        env:
+          TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          ARM64_SHA="${{ steps.hashes.outputs.arm64_sha256 }}"
+          X86_64_SHA="${{ steps.hashes.outputs.x86_64_sha256 }}"
+
+          cat > /tmp/calendarchy.rb << FORMULA
+          class Calendarchy < Formula
+            desc "Terminal calendar app for Google Calendar and iCloud"
+            homepage "https://github.com/sovanesyan/calendarchy"
+            version "${VERSION}"
+            license "MIT"
+
+            on_macos do
+              on_arm do
+                url "https://github.com/sovanesyan/calendarchy/releases/download/v#{version}/calendarchy-aarch64-apple-darwin.tar.gz"
+                sha256 "${ARM64_SHA}"
+              end
+              on_intel do
+                url "https://github.com/sovanesyan/calendarchy/releases/download/v#{version}/calendarchy-x86_64-apple-darwin.tar.gz"
+                sha256 "${X86_64_SHA}"
+              end
+            end
+
+            def install
+              bin.install "calendarchy"
+            end
+
+            test do
+              assert_match version.to_s, shell_output("#{bin}/calendarchy --version")
+            end
+          end
+          FORMULA
+
+          # Clone tap repo, update formula, push
+          git clone "https://x-access-token:${TAP_TOKEN}@github.com/sovanesyan/homebrew-calendarchy.git" /tmp/tap
+          mkdir -p /tmp/tap/Formula
+          cp /tmp/calendarchy.rb /tmp/tap/Formula/calendarchy.rb
+          cd /tmp/tap
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Formula/calendarchy.rb
+          git commit -m "Update calendarchy to ${VERSION}" || exit 0
+          git push

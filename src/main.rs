@@ -59,6 +59,11 @@ enum AsyncMessage {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    if std::env::args().any(|a| a == "--version" || a == "-V") {
+        println!("calendarchy {}", env!("CARGO_PKG_VERSION"));
+        return Ok(());
+    }
+
     let mut app = App::new();
 
     // Load config
