@@ -155,6 +155,36 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             });
         }
 
+    // Auto-discover iCloud calendars if configured but no saved tokens
+    if matches!(app.icloud_auth, ICloudAuthState::NotAuthenticated)
+        && let Some(ref icloud_config) = app.config.icloud
+        && !icloud_config.is_eventkit() {
+            app.icloud_auth = ICloudAuthState::Discovering;
+            let auth = ICloudAuth::new(icloud_config.clone());
+            let client = CalDavClient::new(auth);
+            let tx = tx.clone();
+            tokio::spawn(async move {
+                match client.discover_calendars().await {
+                    Ok(discovered) => {
+                        let calendars: Vec<CalendarEntry> = discovered
+                            .into_iter()
+                            .map(|c| CalendarEntry { url: c.url, name: c.name })
+                            .collect();
+                        if calendars.is_empty() {
+                            let _ = tx.send(AsyncMessage::ICloudDiscoveryError(
+                                "No calendars found".to_string()
+                            )).await;
+                        } else {
+                            let _ = tx.send(AsyncMessage::ICloudDiscovered { calendars }).await;
+                        }
+                    }
+                    Err(e) => {
+                        let _ = tx.send(AsyncMessage::ICloudDiscoveryError(e.to_string())).await;
+                    }
+                }
+            });
+        }
+
     // Enable raw mode and enter alternate screen
     enable_raw_mode()?;
     execute!(stdout(), EnterAlternateScreen, cursor::Hide)?;
