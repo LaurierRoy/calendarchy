@@ -8,6 +8,6 @@ pkgbase = calendarchy
 	makedepends = cargo
 	options = !lto
 	source = calendarchy-0.1.2.tar.gz::https://github.com/sovanesyan/calendarchy/archive/v0.1.2.tar.gz
-	sha256sums = SKIP
+	sha256sums = 94aa6949ed90d93064d50355d03cdd98d253efe8ce420411702a0f6402d154c6
 
 pkgname = calendarchy
