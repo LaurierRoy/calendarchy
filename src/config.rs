@@ -14,13 +14,40 @@ pub struct Config {
     pub icloud: Option<ICloudConfig>,
 }
 
+/// Built-in Google OAuth credentials (public, identifies the app)
+pub const DEFAULT_GOOGLE_CLIENT_ID: &str =
+    "313544353824-1g092hbgrmd6pemvklv58ld9radn0rg3.apps.googleusercontent.com";
+pub const DEFAULT_GOOGLE_CLIENT_SECRET: &str = "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";
+
 /// Google Calendar configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GoogleConfig {
+    #[serde(default = "default_google_client_id")]
     pub client_id: String,
+    #[serde(default = "default_google_client_secret")]
     pub client_secret: String,
     #[serde(default = "default_calendar_id")]
     pub calendar_id: String,
+}
+
+impl Default for GoogleConfig {
+    fn default() -> Self {
+        Self {
+            client_id: default_google_client_id(),
+            client_secret: default_google_client_secret(),
+            calendar_id: "primary".to_string(),
+        }
+    }
+}
+
+fn default_google_client_id() -> String {
+    std::env::var("CALENDARCHY_GOOGLE_CLIENT_ID")
+        .unwrap_or_else(|_| DEFAULT_GOOGLE_CLIENT_ID.to_string())
+}
+
+fn default_google_client_secret() -> String {
+    std::env::var("CALENDARCHY_GOOGLE_CLIENT_SECRET")
+        .unwrap_or_else(|_| DEFAULT_GOOGLE_CLIENT_SECRET.to_string())
 }
 
 /// iCloud Calendar configuration
@@ -109,7 +136,18 @@ impl Config {
         }
 
         let content = fs::read_to_string(&path)?;
-        let config: Config = serde_json::from_str(&content)?;
+        let mut config: Config = serde_json::from_str(&content)?;
+
+        // Env vars always override saved config
+        if let Some(ref mut google) = config.google {
+            if let Ok(id) = std::env::var("CALENDARCHY_GOOGLE_CLIENT_ID") {
+                google.client_id = id;
+            }
+            if let Ok(secret) = std::env::var("CALENDARCHY_GOOGLE_CLIENT_SECRET") {
+                google.client_secret = secret;
+            }
+        }
+
         Ok(config)
     }
 

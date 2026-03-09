@@ -30,9 +30,7 @@ pub struct SearchResult {
 pub enum SetupStep {
     Welcome,
     GoogleAsk,
-    GoogleOpenUrl,
-    GoogleClientId,
-    GoogleSecret,
+    GoogleAuthWaiting,
     ICloudAsk,
     ICloudMethod,     // Choose EventKit vs CalDAV (macOS only)
     ICloudOpenUrl,
@@ -52,8 +50,7 @@ pub enum ICloudMethod {
 pub struct SetupState {
     pub step: SetupStep,
     pub input: String,
-    pub google_client_id: Option<String>,
-    pub google_client_secret: Option<String>,
+    pub google_enabled: bool,
     pub icloud_method: Option<ICloudMethod>,
     pub icloud_apple_id: Option<String>,
     pub icloud_password: Option<String>,
@@ -66,8 +63,7 @@ impl SetupState {
         Self {
             step: SetupStep::Welcome,
             input: String::new(),
-            google_client_id: None,
-            google_client_secret: None,
+            google_enabled: false,
             icloud_method: None,
             icloud_apple_id: None,
             icloud_password: None,

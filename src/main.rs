@@ -16,7 +16,7 @@ use app::{App, ICloudMethod, NavigationMode, PendingAction, SetupState, SetupSte
 use auth::{CalendarEntry, GoogleAuthState, ICloudAuthState};
 use cache::{DisplayEvent, EventId};
 use conversion::{google_event_to_display, icloud_event_to_display};
-use chrono::{DateTime, NaiveDate, Timelike, Utc};
+use chrono::{NaiveDate, Timelike};
 use config::Config;
 use crossterm::{
     cursor,
@@ -34,14 +34,7 @@ use tokio::sync::mpsc;
 /// Messages from async tasks to main loop
 enum AsyncMessage {
     // Google messages
-    GoogleDeviceCode {
-        user_code: String,
-        verification_url: String,
-        device_code: String,
-        expires_at: DateTime<Utc>,
-    },
     GoogleToken(TokenInfo),
-    GoogleAuthPending,
     GoogleAuthError(String),
     GoogleEvents(Vec<google::CalendarEvent>, NaiveDate, String, Option<String>), // events, month_date, calendar_id, calendar_name
     GoogleFetchError(String),
@@ -61,6 +54,37 @@ enum AsyncMessage {
     // Event action messages
     EventActionSuccess(String), // Success message
     EventActionError(String),   // Error message
+}
+
+/// Start Google OAuth browser auth flow
+fn start_google_auth(app: &mut app::App, google_config: config::GoogleConfig, tx: &mpsc::Sender<AsyncMessage>) {
+    app.google_auth = GoogleAuthState::Authenticating;
+    app.set_status("Opening browser for Google sign-in...");
+    let auth = GoogleAuth::new(google_config);
+    let url = auth.auth_url();
+    open_url(&url);
+    let tx = tx.clone();
+    tokio::spawn(async move {
+        match auth.authenticate_with_browser().await {
+            Ok(tokens) => {
+                let _ = tx.send(AsyncMessage::GoogleToken(tokens)).await;
+            }
+            Err(e) => {
+                let _ = tx.send(AsyncMessage::GoogleAuthError(e.to_string())).await;
+            }
+        }
+    });
+}
+
+/// Open the setup wizard, skipping to the first relevant step
+fn open_setup_wizard(app: &mut app::App) {
+    let mut setup = SetupState::new();
+    setup.eventkit_available = eventkit::is_available();
+    // Skip Welcome screen when re-entering via S (config already exists)
+    if app.config.google.is_some() || app.config.icloud.is_some() {
+        setup.step = SetupStep::GoogleAsk;
+    }
+    app.setup = Some(setup);
 }
 
 #[tokio::main]
@@ -130,9 +154,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     if app.config.google.is_none() && app.config.icloud.is_none() {
-        let mut setup = SetupState::new();
-        setup.eventkit_available = eventkit::is_available();
-        app.setup = Some(setup);
+        open_setup_wizard(&mut app);
     }
 
     // Channel for async messages
@@ -321,28 +343,28 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             app.dirty = true;
             match msg {
                 // Google messages
-                AsyncMessage::GoogleDeviceCode {
-                    user_code,
-                    verification_url,
-                    device_code,
-                    expires_at,
-                } => {
-                    app.google_auth = GoogleAuthState::AwaitingUserCode {
-                        user_code,
-                        verification_url,
-                        device_code,
-                        expires_at,
-                    };
-                }
                 AsyncMessage::GoogleToken(tokens) => {
                     let _ = config::save_google_tokens(&tokens);
                     app.google_auth = GoogleAuthState::Authenticated(tokens);
                     app.google_needs_fetch = true;
                     app.set_status("Connected to Google Calendar!");
+                    // Advance setup wizard past auth waiting
+                    if let Some(ref mut setup) = app.setup {
+                        if setup.step == SetupStep::GoogleAuthWaiting {
+                            setup.step = SetupStep::ICloudAsk;
+                        }
+                    }
                 }
-                AsyncMessage::GoogleAuthPending => {}
                 AsyncMessage::GoogleAuthError(msg) => {
-                    app.google_auth = GoogleAuthState::Error(msg);
+                    app.google_auth = GoogleAuthState::Error(msg.clone());
+                    app.set_status(format!("Google: {}", msg));
+                    // Advance setup wizard past auth waiting on error too
+                    if let Some(ref mut setup) = app.setup {
+                        if setup.step == SetupStep::GoogleAuthWaiting {
+                            setup.error = Some(format!("Google auth failed: {}", msg));
+                            setup.step = SetupStep::ICloudAsk;
+                        }
+                    }
                 }
                 AsyncMessage::GoogleEvents(events, month_date, calendar_id, calendar_name) => {
                     let display_events: Vec<DisplayEvent> = events
@@ -424,39 +446,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
 
-        // Poll for Google device code if awaiting
-        if let GoogleAuthState::AwaitingUserCode { ref device_code, expires_at, .. } = app.google_auth
-            && Utc::now() < expires_at
-                && let Some(ref google_config) = app.config.google {
-                    let auth = GoogleAuth::new(google_config.clone());
-                    let device_code = device_code.clone();
-                    let tx = tx.clone();
-
-                    tokio::spawn(async move {
-                        tokio::time::sleep(StdDuration::from_secs(5)).await;
-                        match auth.poll_for_token(&device_code).await {
-                            Ok(google::auth::PollResult::Success(tokens)) => {
-                                let _ = tx.send(AsyncMessage::GoogleToken(tokens)).await;
-                            }
-                            Ok(google::auth::PollResult::Pending) => {
-                                let _ = tx.send(AsyncMessage::GoogleAuthPending).await;
-                            }
-                            Ok(google::auth::PollResult::Denied) => {
-                                let _ = tx.send(AsyncMessage::GoogleAuthError("Access denied".to_string())).await;
-                            }
-                            Ok(google::auth::PollResult::Expired) => {
-                                let _ = tx.send(AsyncMessage::GoogleAuthError("Code expired".to_string())).await;
-                            }
-                            Ok(google::auth::PollResult::SlowDown) => {
-                                let _ = tx.send(AsyncMessage::GoogleAuthPending).await;
-                            }
-                            Err(e) => {
-                                let _ = tx.send(AsyncMessage::GoogleAuthError(e.to_string())).await;
-                            }
-                        }
-                    });
-                }
-
         // Handle input events with timeout
         if event::poll(StdDuration::from_millis(100))? {
             match event::read()? {
@@ -467,18 +456,54 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     app.dirty = true;
                     // Handle interactive setup wizard
                     if app.setup.is_some() {
-                        match handle_setup_input(&mut app, key_event.code) {
+                        match handle_setup_input(&mut app, key_event.code, &tx) {
                             SetupAction::Continue => {}
                             SetupAction::Quit => break,
                             SetupAction::Finished => {
                                 // Reload config and initialize auth states
                                 app.config = Config::load().unwrap_or_default();
                                 app.setup = None;
-                                if app.config.google.is_some() {
-                                    app.google_auth = GoogleAuthState::NotAuthenticated;
+
+                                // Auto-start Google browser auth if newly configured
+                                if !matches!(app.google_auth, GoogleAuthState::Authenticated(_)) {
+                                    if let Some(gc) = app.config.google.clone() {
+                                        start_google_auth(&mut app, gc, &tx);
+                                    }
                                 }
-                                if app.config.icloud.is_some() {
-                                    app.icloud_auth = ICloudAuthState::NotAuthenticated;
+
+                                // Auto-start iCloud discovery if newly configured
+                                if let Some(ref icloud_config) = app.config.icloud {
+                                    if matches!(app.icloud_auth, ICloudAuthState::NotConfigured | ICloudAuthState::NotAuthenticated) {
+                                        if icloud_config.is_eventkit() {
+                                            app.icloud_auth = ICloudAuthState::Authenticated { calendars: vec![] };
+                                            app.icloud_needs_fetch = true;
+                                        } else {
+                                            app.icloud_auth = ICloudAuthState::Discovering;
+                                            let auth = ICloudAuth::new(icloud_config.clone());
+                                            let client = CalDavClient::new(auth);
+                                            let tx = tx.clone();
+                                            tokio::spawn(async move {
+                                                match client.discover_calendars().await {
+                                                    Ok(discovered) => {
+                                                        let calendars: Vec<CalendarEntry> = discovered
+                                                            .into_iter()
+                                                            .map(|c| CalendarEntry { url: c.url, name: c.name })
+                                                            .collect();
+                                                        if calendars.is_empty() {
+                                                            let _ = tx.send(AsyncMessage::ICloudDiscoveryError(
+                                                                "No calendars found".to_string()
+                                                            )).await;
+                                                        } else {
+                                                            let _ = tx.send(AsyncMessage::ICloudDiscovered { calendars }).await;
+                                                        }
+                                                    }
+                                                    Err(e) => {
+                                                        let _ = tx.send(AsyncMessage::ICloudDiscoveryError(e.to_string())).await;
+                                                    }
+                                                }
+                                            });
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -711,6 +736,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             (KeyCode::Char('2'), _) => {
                                 open_url("https://www.icloud.com/calendar");
                             }
+                            (KeyCode::Char('S'), _) => {
+                                open_setup_wizard(&mut app);
+                            }
                             (KeyCode::Char('q') | KeyCode::Char('я'), _) => {
                                 break;
                             }
@@ -764,30 +792,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             open_url("https://www.icloud.com/calendar");
                         }
                         (KeyCode::Char('g') | KeyCode::Char('г'), _) => {
-                            // Start Google auth flow (only if not already authenticated)
-                            if matches!(app.google_auth, GoogleAuthState::Authenticated(_)) {
-                                // Already authenticated, ignore
-                            } else if let Some(ref google_config) = app.config.google {
-                                let auth = GoogleAuth::new(google_config.clone());
-                                let tx = tx.clone();
-
-                                tokio::spawn(async move {
-                                    match auth.request_device_code().await {
-                                        Ok(resp) => {
-                                            let expires_at = Utc::now() + chrono::Duration::seconds(resp.expires_in as i64);
-                                            let _ = tx.send(AsyncMessage::GoogleDeviceCode {
-                                                user_code: resp.user_code,
-                                                verification_url: resp.verification_url,
-                                                device_code: resp.device_code,
-                                                expires_at,
-                                            }).await;
-                                        }
-                                        Err(e) => {
-                                            let _ = tx.send(AsyncMessage::GoogleAuthError(e.to_string())).await;
-                                        }
-                                    }
-                                });
+                            if !matches!(app.google_auth, GoogleAuthState::Authenticated(_)) {
+                                if let Some(gc) = app.config.google.clone() {
+                                    start_google_auth(&mut app, gc, &tx);
+                                }
                             }
+                        }
+                        (KeyCode::Char('S'), _) => {
+                            open_setup_wizard(&mut app);
                         }
                         (KeyCode::Char('i') | KeyCode::Char('и'), _) => {
                             // Start iCloud discovery (re-run to refresh calendar names)
@@ -843,68 +855,49 @@ enum SetupAction {
     Finished,
 }
 
-fn handle_setup_input(app: &mut App, key: KeyCode) -> SetupAction {
+fn handle_setup_input(app: &mut App, key: KeyCode, tx: &mpsc::Sender<AsyncMessage>) -> SetupAction {
+    // Handle Google auth start separately to avoid borrow conflicts
+    if let Some(ref setup) = app.setup {
+        if setup.step == SetupStep::GoogleAsk
+            && matches!(key, KeyCode::Char('y') | KeyCode::Char('Y') | KeyCode::Enter)
+        {
+            // Save config and start auth
+            if app.config.google.is_none() {
+                app.config.google = Some(config::GoogleConfig::default());
+            }
+            let _ = app.config.save();
+            if let Some(gc) = app.config.google.clone() {
+                start_google_auth(app, gc, tx);
+            }
+            let setup = app.setup.as_mut().unwrap();
+            setup.google_enabled = true;
+            setup.step = SetupStep::GoogleAuthWaiting;
+            return SetupAction::Continue;
+        }
+    }
+
     let setup = app.setup.as_mut().unwrap();
     setup.error = None;
 
     match setup.step {
         SetupStep::Welcome => match key {
-            KeyCode::Enter => { setup.step = SetupStep::GoogleAsk; }
+            KeyCode::Enter => {
+                setup.step = SetupStep::GoogleAsk;
+            }
             KeyCode::Char('q') | KeyCode::Esc => return SetupAction::Quit,
             _ => {}
         },
         SetupStep::GoogleAsk => match key {
-            KeyCode::Char('y') | KeyCode::Char('Y') | KeyCode::Enter => {
-                setup.step = SetupStep::GoogleOpenUrl;
-                open_url("https://console.cloud.google.com/apis/credentials");
-            }
             KeyCode::Char('n') | KeyCode::Char('N') => {
                 setup.step = SetupStep::ICloudAsk;
             }
             KeyCode::Esc => { setup.step = SetupStep::Welcome; }
             _ => {}
         },
-        SetupStep::GoogleOpenUrl => match key {
-            KeyCode::Enter => { setup.step = SetupStep::GoogleClientId; }
-            KeyCode::Esc => { setup.step = SetupStep::GoogleAsk; }
-            _ => {}
-        },
-        SetupStep::GoogleClientId => match key {
-            KeyCode::Enter => {
-                let val = setup.input.trim().to_string();
-                if val.is_empty() {
-                    setup.error = Some("Client ID cannot be empty".to_string());
-                } else {
-                    setup.google_client_id = Some(val);
-                    setup.input.clear();
-                    setup.step = SetupStep::GoogleSecret;
-                }
-            }
+        SetupStep::GoogleAuthWaiting => match key {
             KeyCode::Esc => {
-                setup.input.clear();
-                setup.step = SetupStep::GoogleOpenUrl;
+                setup.step = SetupStep::ICloudAsk;
             }
-            KeyCode::Backspace => { setup.input.pop(); }
-            KeyCode::Char(c) => { setup.input.push(c); }
-            _ => {}
-        },
-        SetupStep::GoogleSecret => match key {
-            KeyCode::Enter => {
-                let val = setup.input.trim().to_string();
-                if val.is_empty() {
-                    setup.error = Some("Client Secret cannot be empty".to_string());
-                } else {
-                    setup.google_client_secret = Some(val);
-                    setup.input.clear();
-                    setup.step = SetupStep::ICloudAsk;
-                }
-            }
-            KeyCode::Esc => {
-                setup.input.clear();
-                setup.step = SetupStep::GoogleClientId;
-            }
-            KeyCode::Backspace => { setup.input.pop(); }
-            KeyCode::Char(c) => { setup.input.push(c); }
             _ => {}
         },
         SetupStep::ICloudAsk => match key {
@@ -920,11 +913,7 @@ fn handle_setup_input(app: &mut App, key: KeyCode) -> SetupAction {
                 setup.step = SetupStep::Done;
             }
             KeyCode::Esc => {
-                if setup.google_client_id.is_some() {
-                    setup.step = SetupStep::GoogleSecret;
-                } else {
-                    setup.step = SetupStep::GoogleAsk;
-                }
+                setup.step = SetupStep::GoogleAsk;
             }
             _ => {}
         },
@@ -997,25 +986,21 @@ fn handle_setup_input(app: &mut App, key: KeyCode) -> SetupAction {
 
     // Save config when we reach Done
     if setup.step == SetupStep::Done {
-        let has_google = setup.google_client_id.is_some();
+        let has_google = setup.google_enabled;
         let has_eventkit = setup.icloud_method == Some(ICloudMethod::EventKit);
         let has_caldav = setup.icloud_apple_id.is_some();
+        let already_has_google = app.config.google.is_some();
+        let already_has_icloud = app.config.icloud.is_some();
 
-        if !has_google && !has_eventkit && !has_caldav {
+        if !has_google && !has_eventkit && !has_caldav && !already_has_google && !already_has_icloud {
             setup.error = Some("Set up at least one calendar".to_string());
             setup.step = SetupStep::GoogleAsk;
             return SetupAction::Continue;
         }
 
-        let mut config = Config::default();
-        if let (Some(client_id), Some(client_secret)) =
-            (setup.google_client_id.take(), setup.google_client_secret.take())
-        {
-            config.google = Some(config::GoogleConfig {
-                client_id,
-                client_secret,
-                calendar_id: "primary".to_string(),
-            });
+        let mut config = app.config.clone();
+        if has_google && config.google.is_none() {
+            config.google = Some(config::GoogleConfig::default());
         }
         if has_eventkit {
             config.icloud = Some(config::ICloudConfig {

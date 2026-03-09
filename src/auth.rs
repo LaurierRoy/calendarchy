@@ -1,4 +1,3 @@
-use chrono::{DateTime, Utc};
 use crate::google::TokenInfo;
 
 /// Trait for auth state display
@@ -11,16 +10,8 @@ pub trait AuthDisplay {
 pub enum GoogleAuthState {
     NotConfigured,
     NotAuthenticated,
-    AwaitingUserCode {
-        #[allow(dead_code)]
-        user_code: String,
-        #[allow(dead_code)]
-        verification_url: String,
-        device_code: String,
-        expires_at: DateTime<Utc>,
-    },
+    Authenticating,
     Authenticated(TokenInfo),
-    #[allow(dead_code)]
     Error(String),
 }
 

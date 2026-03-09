@@ -1091,50 +1091,24 @@ fn render_setup_wizard(out: &mut impl Write, setup: &SetupState, term_width: u16
             lines.push(("Press Enter to start, q to quit.", Style::Dim));
         }
         SetupStep::GoogleAsk => {
-            lines.push(("Google Calendar Setup", Style::Header));
+            lines.push(("Google Calendar", Style::Header));
             lines.push(("", Style::Normal));
-            lines.push(("Google Calendar requires an OAuth Client ID.", Style::Normal));
-            lines.push(("You'll need to create one in Google Cloud Console.", Style::Normal));
+            lines.push(("Connect your Google Calendar?", Style::Normal));
+            lines.push(("You'll sign in with your Google account.", Style::Normal));
             lines.push(("", Style::Normal));
-            lines.push(("Set up Google Calendar? (y/n)", Style::Accent));
+            lines.push(("(y/n)", Style::Accent));
         }
-        SetupStep::GoogleOpenUrl => {
-            lines.push(("Google Calendar Setup", Style::Header));
+        SetupStep::GoogleAuthWaiting => {
+            lines.push(("Google Calendar", Style::Header));
             lines.push(("", Style::Normal));
-            lines.push(("A browser window should have opened to:", Style::Normal));
-            lines.push(("Google Cloud Console > APIs & Credentials", Style::Accent));
+            lines.push(("Sign in with your Google account in the browser.", Style::Normal));
+            lines.push(("Waiting for authorization...", Style::Accent));
             lines.push(("", Style::Normal));
-            lines.push(("Follow these steps:", Style::Normal));
-            lines.push(("1. Create a project (or select an existing one)", Style::Normal));
-            lines.push(("2. Click + CREATE CREDENTIALS > OAuth client ID", Style::Normal));
-            lines.push(("3. Choose application type: TVs and Limited Input devices", Style::Normal));
-            lines.push(("4. Copy the Client ID and Client Secret", Style::Normal));
-            lines.push(("", Style::Normal));
-            lines.push(("Also enable the Google Calendar API:", Style::Normal));
-            lines.push(("5. Go to APIs & Services > Library", Style::Normal));
-            lines.push(("6. Search for \"Google Calendar API\" and enable it", Style::Normal));
-            lines.push(("", Style::Normal));
-            lines.push(("Press Enter when ready to paste credentials.", Style::Dim));
-        }
-        SetupStep::GoogleClientId => {
-            lines.push(("Google Calendar Setup", Style::Header));
-            lines.push(("", Style::Normal));
-            lines.push(("Paste your Client ID:", Style::Normal));
-            input_line = Some(format!("> {}_", setup.input));
-        }
-        SetupStep::GoogleSecret => {
-            lines.push(("Google Calendar Setup", Style::Header));
-            lines.push(("", Style::Normal));
-            lines.push(("Paste your Client Secret:", Style::Normal));
-            input_line = Some(format!("> {}_", setup.input));
+            lines.push(("Press Esc to skip.", Style::Dim));
         }
         SetupStep::ICloudAsk => {
             lines.push(("iCloud Calendar Setup", Style::Header));
             lines.push(("", Style::Normal));
-            if setup.google_client_id.is_some() {
-                lines.push(("Google Calendar configured!", Style::Accent));
-                lines.push(("", Style::Normal));
-            }
             lines.push(("Set up iCloud / personal calendar? (y/n)", Style::Accent));
         }
         SetupStep::ICloudMethod => {

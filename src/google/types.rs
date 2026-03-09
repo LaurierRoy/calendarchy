@@ -16,15 +16,6 @@ impl TokenInfo {
     }
 }
 
-/// Device code response from Google
-#[derive(Debug, Deserialize)]
-pub struct DeviceCodeResponse {
-    pub device_code: String,
-    pub user_code: String,
-    pub verification_url: String,
-    pub expires_in: u64,
-}
-
 /// Token endpoint response
 #[derive(Debug, Deserialize)]
 pub struct TokenResponse {
