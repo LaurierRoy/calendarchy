@@ -1078,102 +1078,78 @@ fn render_setup_wizard(out: &mut impl Write, setup: &SetupState, term_width: u16
     // Collect lines to render: (text, style)
     enum Style { Header, Normal, Dim, Accent, Error }
 
-    let mut lines: Vec<(String, Style)> = Vec::new();
+    let mut lines: Vec<(&str, Style)> = Vec::new();
     let mut input_line: Option<String> = None;
 
     match setup.step {
-        SetupStep::ShortcutAsk => {
-            lines.push(("Keyboard Shortcut".into(), Style::Header));
-            lines.push(("".into(), Style::Normal));
-            #[cfg(target_os = "macos")]
-            {
-                lines.push(("Install Cmd+Shift+J to launch Calendarchy from anywhere?".into(), Style::Normal));
-            }
-            #[cfg(target_os = "linux")]
-            {
-                lines.push(("Install Super+Shift+J to launch Calendarchy from anywhere?".into(), Style::Normal));
-                lines.push(("Adds a keybinding to ~/.config/hypr/bindings.conf".into(), Style::Dim));
-            }
-            lines.push(("".into(), Style::Normal));
-            lines.push(("(y/n)".into(), Style::Accent));
-        }
-        SetupStep::ShortcutTerminalChoice => {
-            lines.push(("Terminal Emulator".into(), Style::Header));
-            lines.push(("".into(), Style::Normal));
-            lines.push(("Which terminal should the shortcut open?".into(), Style::Normal));
-            lines.push(("".into(), Style::Normal));
-            for (i, name) in setup.available_terminals.iter().enumerate() {
-                lines.push((format!("{}. {}", i + 1, name), Style::Accent));
-            }
-        }
         SetupStep::Welcome => {
-            lines.push(("Calendarchy".into(), Style::Header));
-            lines.push(("".into(), Style::Normal));
-            lines.push(("No calendars configured yet.".into(), Style::Normal));
-            lines.push(("This wizard will guide you through the setup.".into(), Style::Normal));
-            lines.push(("".into(), Style::Normal));
-            lines.push(("Press Enter to start, q to quit.".into(), Style::Dim));
+            lines.push(("Calendarchy", Style::Header));
+            lines.push(("", Style::Normal));
+            lines.push(("No calendars configured yet.", Style::Normal));
+            lines.push(("This wizard will guide you through the setup.", Style::Normal));
+            lines.push(("", Style::Normal));
+            lines.push(("Press Enter to start, q to quit.", Style::Dim));
         }
         SetupStep::GoogleAsk => {
-            lines.push(("Google Calendar".into(), Style::Header));
-            lines.push(("".into(), Style::Normal));
-            lines.push(("Connect your Google Calendar?".into(), Style::Normal));
-            lines.push(("You'll sign in with your Google account.".into(), Style::Normal));
-            lines.push(("".into(), Style::Normal));
-            lines.push(("(y/n)".into(), Style::Accent));
+            lines.push(("Google Calendar", Style::Header));
+            lines.push(("", Style::Normal));
+            lines.push(("Connect your Google Calendar?", Style::Normal));
+            lines.push(("You'll sign in with your Google account.", Style::Normal));
+            lines.push(("", Style::Normal));
+            lines.push(("(y/n)", Style::Accent));
         }
         SetupStep::GoogleAuthWaiting => {
-            lines.push(("Google Calendar".into(), Style::Header));
-            lines.push(("".into(), Style::Normal));
-            lines.push(("Sign in with your Google account in the browser.".into(), Style::Normal));
-            lines.push(("Waiting for authorization...".into(), Style::Accent));
-            lines.push(("".into(), Style::Normal));
-            lines.push(("Press Esc to skip.".into(), Style::Dim));
+            lines.push(("Google Calendar", Style::Header));
+            lines.push(("", Style::Normal));
+            lines.push(("Sign in with your Google account in the browser.", Style::Normal));
+            lines.push(("Waiting for authorization...", Style::Accent));
+            lines.push(("", Style::Normal));
+            lines.push(("Press Esc to skip.", Style::Dim));
         }
         SetupStep::ICloudAsk => {
-            lines.push(("iCloud Calendar Setup".into(), Style::Header));
-            lines.push(("".into(), Style::Normal));
-            lines.push(("Set up iCloud / personal calendar? (y/n)".into(), Style::Accent));
+            lines.push(("iCloud Calendar Setup", Style::Header));
+            lines.push(("", Style::Normal));
+            lines.push(("Set up iCloud / personal calendar? (y/n)", Style::Accent));
         }
         SetupStep::ICloudMethod => {
-            lines.push(("iCloud Calendar Setup".into(), Style::Header));
-            lines.push(("".into(), Style::Normal));
-            lines.push(("Choose how to connect:".into(), Style::Normal));
-            lines.push(("".into(), Style::Normal));
-            lines.push(("1. System Calendars (recommended)".into(), Style::Accent));
-            lines.push(("   Reads from macOS Calendar app. Zero configuration.".into(), Style::Normal));
-            lines.push(("   Includes all calendars you've added in System Settings.".into(), Style::Normal));
-            lines.push(("".into(), Style::Normal));
-            lines.push(("2. CalDAV (manual setup)".into(), Style::Dim));
-            lines.push(("   Connect directly with Apple ID + app-specific password.".into(), Style::Normal));
-            lines.push(("   Works on Linux. Only shows iCloud calendars.".into(), Style::Normal));
-            lines.push(("".into(), Style::Normal));
-            lines.push(("Press 1 or 2 to choose.".into(), Style::Dim));
+            lines.push(("iCloud Calendar Setup", Style::Header));
+            lines.push(("", Style::Normal));
+            lines.push(("Choose how to connect:", Style::Normal));
+            lines.push(("", Style::Normal));
+            lines.push(("1. System Calendars (recommended)", Style::Accent));
+            lines.push(("   Reads from macOS Calendar app. Zero configuration.", Style::Normal));
+            lines.push(("   Includes all calendars you've added in System Settings.", Style::Normal));
+            lines.push(("", Style::Normal));
+            lines.push(("2. CalDAV (manual setup)", Style::Dim));
+            lines.push(("   Connect directly with Apple ID + app-specific password.", Style::Normal));
+            lines.push(("   Works on Linux. Only shows iCloud calendars.", Style::Normal));
+            lines.push(("", Style::Normal));
+            lines.push(("Press 1 or 2 to choose.", Style::Dim));
         }
         SetupStep::ICloudOpenUrl => {
-            lines.push(("iCloud Calendar Setup".into(), Style::Header));
-            lines.push(("".into(), Style::Normal));
-            lines.push(("A browser window should have opened to:".into(), Style::Normal));
-            lines.push(("Apple ID > Account Management".into(), Style::Accent));
-            lines.push(("".into(), Style::Normal));
-            lines.push(("Follow these steps:".into(), Style::Normal));
-            lines.push(("1. Sign in to your Apple ID".into(), Style::Normal));
-            lines.push(("2. Go to App-Specific Passwords".into(), Style::Normal));
-            lines.push(("3. Generate a new password (name it \"Calendarchy\")".into(), Style::Normal));
-            lines.push(("4. Copy the generated password (xxxx-xxxx-xxxx-xxxx)".into(), Style::Normal));
-            lines.push(("".into(), Style::Normal));
-            lines.push(("Press Enter when ready to paste credentials.".into(), Style::Dim));
+            lines.push(("iCloud Calendar Setup", Style::Header));
+            lines.push(("", Style::Normal));
+            lines.push(("A browser window should have opened to:", Style::Normal));
+            lines.push(("Apple ID > Account Management", Style::Accent));
+            lines.push(("", Style::Normal));
+            lines.push(("Follow these steps:", Style::Normal));
+            lines.push(("1. Sign in to your Apple ID", Style::Normal));
+            lines.push(("2. Go to App-Specific Passwords", Style::Normal));
+            lines.push(("3. Generate a new password (name it \"Calendarchy\")", Style::Normal));
+            lines.push(("4. Copy the generated password (xxxx-xxxx-xxxx-xxxx)", Style::Normal));
+            lines.push(("", Style::Normal));
+            lines.push(("Press Enter when ready to paste credentials.", Style::Dim));
         }
         SetupStep::ICloudAppleId => {
-            lines.push(("iCloud Calendar Setup".into(), Style::Header));
-            lines.push(("".into(), Style::Normal));
-            lines.push(("Enter your Apple ID (email):".into(), Style::Normal));
+            lines.push(("iCloud Calendar Setup", Style::Header));
+            lines.push(("", Style::Normal));
+            lines.push(("Enter your Apple ID (email):", Style::Normal));
             input_line = Some(format!("> {}_", setup.input));
         }
         SetupStep::ICloudPassword => {
-            lines.push(("iCloud Calendar Setup".into(), Style::Header));
-            lines.push(("".into(), Style::Normal));
-            lines.push(("Paste your app-specific password:".into(), Style::Normal));
+            lines.push(("iCloud Calendar Setup", Style::Header));
+            lines.push(("", Style::Normal));
+            lines.push(("Paste your app-specific password:", Style::Normal));
             let masked: String = setup.input.chars().map(|_| '*').collect();
             input_line = Some(format!("> {}_", masked));
         }
@@ -1182,14 +1158,15 @@ fn render_setup_wizard(out: &mut impl Write, setup: &SetupState, term_width: u16
 
     // Add input line
     if let Some(ref il) = input_line {
-        lines.push(("".into(), Style::Normal)); // placeholder, we'll render input_line specially
+        lines.push(("", Style::Normal)); // placeholder, we'll render input_line specially
+        // The actual input will be rendered in place of the last line
         let _ = il; // used below
     }
 
     // Add error if any
     if setup.error.is_some() {
-        lines.push(("".into(), Style::Normal));
-        lines.push(("".into(), Style::Error)); // placeholder for error
+        lines.push(("", Style::Normal));
+        lines.push(("", Style::Error)); // placeholder for error
     }
 
     // Calculate vertical centering
@@ -1209,6 +1186,7 @@ fn render_setup_wizard(out: &mut impl Write, setup: &SetupState, term_width: u16
         if !input_rendered {
             if let Some(ref il) = input_line {
                 if text.is_empty() && matches!(style, Style::Normal) && i > 0 {
+                    // Check if previous line was a prompt
                     let prev = &lines[i - 1];
                     if matches!(prev.1, Style::Normal) && (prev.0.contains("Paste") || prev.0.contains("Enter")) {
                         execute!(out, SetForegroundColor(Color::White)).unwrap();

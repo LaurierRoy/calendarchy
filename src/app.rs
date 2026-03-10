@@ -28,8 +28,6 @@ pub struct SearchResult {
 /// Interactive setup wizard step
 #[derive(Debug, Clone, PartialEq)]
 pub enum SetupStep {
-    ShortcutAsk,
-    ShortcutTerminalChoice, // macOS only — pick terminal emulator
     Welcome,
     GoogleAsk,
     GoogleAuthWaiting,
@@ -58,7 +56,6 @@ pub struct SetupState {
     pub icloud_password: Option<String>,
     pub error: Option<String>,
     pub eventkit_available: bool,
-    pub available_terminals: Vec<String>,
 }
 
 impl SetupState {
@@ -72,7 +69,6 @@ impl SetupState {
             icloud_password: None,
             error: None,
             eventkit_available: false,
-            available_terminals: Vec::new(),
         }
     }
 }

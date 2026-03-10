@@ -1,19 +1,15 @@
+use std::io::{self, Write};
 use std::path::PathBuf;
 use std::process::Command;
 
-// === macOS hotkey setup ===
-
-#[cfg(target_os = "macos")]
 const PLIST_LABEL: &str = "com.calendarchy.hotkey";
 
-#[cfg(target_os = "macos")]
-pub struct Terminal {
-    pub name: &'static str,
+struct Terminal {
+    name: &'static str,
     app: &'static str,
-    launch_fmt: &'static str,
+    launch_fmt: &'static str, // {} is replaced with the calendarchy path
 }
 
-#[cfg(target_os = "macos")]
 const TERMINALS: &[Terminal] = &[
     Terminal { name: "Ghostty", app: "Ghostty.app", launch_fmt: "open -na Ghostty.app --args --window-width=120 --window-height=40 -e {}" },
     Terminal { name: "iTerm2", app: "iTerm.app", launch_fmt: "open -na iTerm.app --args {}" },
@@ -23,23 +19,23 @@ const TERMINALS: &[Terminal] = &[
     Terminal { name: "Terminal", app: "Terminal.app", launch_fmt: "osascript -e 'tell application \"Terminal\"' -e 'do script \"{}\"' -e 'set number of columns of front window to 120' -e 'set number of rows of front window to 40' -e 'activate' -e 'end tell'" },
 ];
 
-#[cfg(target_os = "macos")]
-pub fn detect_terminal_names() -> Vec<String> {
+fn detect_terminals() -> Vec<&'static Terminal> {
     TERMINALS.iter().filter(|t| {
         PathBuf::from(format!("/Applications/{}", t.app)).exists()
             || PathBuf::from(format!("/System/Applications/{}", t.app)).exists()
             || PathBuf::from(format!("/System/Applications/Utilities/{}", t.app)).exists()
-    }).map(|t| t.name.to_string()).collect()
+    }).collect()
 }
 
-#[cfg(target_os = "macos")]
 fn find_hotkey_binary() -> Option<PathBuf> {
+    // Check next to the current executable first
     if let Ok(exe) = std::env::current_exe() {
         let sibling = exe.parent().unwrap().join("calendarchy-hotkey");
         if sibling.exists() {
             return Some(sibling);
         }
     }
+    // Check PATH
     if let Ok(output) = Command::new("which").arg("calendarchy-hotkey").output() {
         if output.status.success() {
             let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
@@ -51,14 +47,12 @@ fn find_hotkey_binary() -> Option<PathBuf> {
     None
 }
 
-#[cfg(target_os = "macos")]
 fn plist_path() -> PathBuf {
     dirs::home_dir().unwrap()
         .join("Library/LaunchAgents")
         .join(format!("{}.plist", PLIST_LABEL))
 }
 
-#[cfg(target_os = "macos")]
 fn calendarchy_path() -> String {
     std::env::current_exe()
         .unwrap_or_else(|_| PathBuf::from("/opt/homebrew/bin/calendarchy"))
@@ -66,25 +60,47 @@ fn calendarchy_path() -> String {
         .to_string()
 }
 
-#[cfg(target_os = "macos")]
-pub fn install_shortcut(terminal_index: usize) -> Result<(), String> {
-    let hotkey_bin = find_hotkey_binary()
-        .ok_or("calendarchy-hotkey not found. Reinstall with: brew reinstall calendarchy")?;
+pub fn run_setup() -> Result<(), Box<dyn std::error::Error>> {
+    println!("Calendarchy Hotkey Setup");
+    println!("========================\n");
 
-    let terminals: Vec<&Terminal> = TERMINALS.iter().filter(|t| {
-        PathBuf::from(format!("/Applications/{}", t.app)).exists()
-            || PathBuf::from(format!("/System/Applications/{}", t.app)).exists()
-            || PathBuf::from(format!("/System/Applications/Utilities/{}", t.app)).exists()
-    }).collect();
+    // Find hotkey binary
+    let hotkey_bin = find_hotkey_binary().ok_or(
+        "calendarchy-hotkey binary not found. Make sure it's installed (brew reinstall calendarchy)."
+    )?;
+    println!("Found hotkey helper: {}\n", hotkey_bin.display());
 
-    let terminal = terminals.get(terminal_index)
-        .ok_or("Invalid terminal selection")?;
+    // Detect terminals
+    let terminals = detect_terminals();
+    if terminals.is_empty() {
+        return Err("No supported terminals found in /Applications.".into());
+    }
 
+    // Ask user to pick
+    println!("Available terminals:");
+    for (i, t) in terminals.iter().enumerate() {
+        println!("  {}. {}", i + 1, t.name);
+    }
+    print!("\nSelect terminal [1]: ");
+    io::stdout().flush()?;
+
+    let mut input = String::new();
+    io::stdin().read_line(&mut input)?;
+    let choice: usize = input.trim().parse().unwrap_or(1);
+    if choice < 1 || choice > terminals.len() {
+        return Err("Invalid selection.".into());
+    }
+
+    let terminal = terminals[choice - 1];
     let cal_path = calendarchy_path();
     let launch_cmd = terminal.launch_fmt.replace("{}", &cal_path);
 
+    println!("\nUsing {} with shortcut Cmd+Shift+J", terminal.name);
+    println!("Launch command: {}\n", launch_cmd);
+
+    // Generate LaunchAgent plist
     let plist_dir = dirs::home_dir().unwrap().join("Library/LaunchAgents");
-    std::fs::create_dir_all(&plist_dir).map_err(|e| e.to_string())?;
+    std::fs::create_dir_all(&plist_dir)?;
 
     let plist_content = format!(
 r#"<?xml version="1.0" encoding="UTF-8"?>
@@ -110,26 +126,33 @@ r#"<?xml version="1.0" encoding="UTF-8"?>
     );
 
     let plist = plist_path();
+
+    // Unload existing agent if present
     if plist.exists() {
         let _ = Command::new("launchctl").args(["unload", &plist.to_string_lossy()]).output();
     }
 
-    std::fs::write(&plist, &plist_content).map_err(|e| e.to_string())?;
+    std::fs::write(&plist, &plist_content)?;
+    println!("Created {}", plist.display());
 
+    // Load the agent
     let output = Command::new("launchctl")
         .args(["load", &plist.to_string_lossy()])
-        .output()
-        .map_err(|e| e.to_string())?;
+        .output()?;
 
-    if !output.status.success() {
+    if output.status.success() {
+        println!("Hotkey agent loaded successfully!\n");
+        println!("Press Cmd+Shift+J from anywhere to launch Calendarchy.");
+        println!("\nNote: macOS will ask for Accessibility permission on first use.");
+        println!("Grant it in System Settings > Privacy & Security > Accessibility.");
+    } else {
         let err = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("Failed to load agent: {}", err));
+        return Err(format!("Failed to load agent: {}", err).into());
     }
 
     Ok(())
 }
 
-#[cfg(target_os = "macos")]
 pub fn remove_setup() -> Result<(), Box<dyn std::error::Error>> {
     let plist = plist_path();
 
@@ -138,68 +161,14 @@ pub fn remove_setup() -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
 
+    // Unload
     let _ = Command::new("launchctl")
         .args(["unload", &plist.to_string_lossy()])
         .output();
 
+    // Delete plist
     std::fs::remove_file(&plist)?;
+
     println!("Hotkey agent removed.");
     Ok(())
-}
-
-// === Linux Hyprland setup ===
-
-#[cfg(target_os = "linux")]
-const HYPRLAND_BIND: &str = "bind = SUPER SHIFT, J, exec, xdg-terminal-exec calendarchy";
-
-#[cfg(target_os = "linux")]
-fn hyprland_bindings_path() -> PathBuf {
-    dirs::home_dir().unwrap().join(".config/hypr/bindings.conf")
-}
-
-#[cfg(target_os = "linux")]
-fn hyprland_bind_exists() -> bool {
-    let path = hyprland_bindings_path();
-    if !path.exists() { return false; }
-    std::fs::read_to_string(&path)
-        .map(|content| content.contains("calendarchy"))
-        .unwrap_or(false)
-}
-
-#[cfg(target_os = "linux")]
-pub fn install_shortcut() -> Result<(), String> {
-    let path = hyprland_bindings_path();
-    let mut content = if path.exists() {
-        std::fs::read_to_string(&path).map_err(|e| e.to_string())?
-    } else {
-        String::new()
-    };
-    if !content.ends_with('\n') && !content.is_empty() {
-        content.push('\n');
-    }
-    content.push_str(HYPRLAND_BIND);
-    content.push('\n');
-    std::fs::write(&path, content).map_err(|e| e.to_string())?;
-    Ok(())
-}
-
-// === Platform-agnostic ===
-
-/// Returns true if the shortcut setup step should be shown in the wizard
-pub fn should_show_shortcut_step() -> bool {
-    #[cfg(target_os = "macos")]
-    {
-        !plist_path().exists() && find_hotkey_binary().is_some()
-    }
-
-    #[cfg(target_os = "linux")]
-    {
-        dirs::home_dir()
-            .map(|h| h.join(".config/hypr").exists())
-            .unwrap_or(false)
-            && !hyprland_bind_exists()
-    }
-
-    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
-    { false }
 }
