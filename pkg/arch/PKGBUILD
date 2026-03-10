@@ -9,7 +9,7 @@ license=('MIT')
 makedepends=('cargo')
 options=(!lto)
 source=("$pkgname-$pkgver.tar.gz::$url/archive/v$pkgver.tar.gz")
-sha256sums=('SKIP')
+sha256sums=('8137df4788358a2febf72e61058b590984d8b18633a750c0e2dc1fcc0b65b848')
 
 prepare() {
   cd "$pkgname-$pkgver"
