@@ -150,7 +150,7 @@ pub fn remove_setup() -> Result<(), Box<dyn std::error::Error>> {
 // === Linux Hyprland setup ===
 
 #[cfg(target_os = "linux")]
-const HYPRLAND_BIND: &str = "bind = SUPER SHIFT, J, exec, xdg-terminal-exec calendarchy";
+const HYPRLAND_BIND: &str = "bindd = SUPER SHIFT, J, Calendarchy, exec, omarchy-launch-tui calendarchy";
 
 #[cfg(target_os = "linux")]
 fn hyprland_bindings_path() -> PathBuf {
