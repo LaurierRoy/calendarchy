@@ -80,10 +80,20 @@ fn start_google_auth(app: &mut app::App, google_config: config::GoogleConfig, tx
 fn open_setup_wizard(app: &mut app::App) {
     let mut setup = SetupState::new();
     setup.eventkit_available = eventkit::is_available();
-    // Skip Welcome screen when re-entering via S (config already exists)
+
     if app.config.google.is_some() || app.config.icloud.is_some() {
+        // Re-entering via S key: skip to calendar config
         setup.step = SetupStep::GoogleAsk;
+    } else if setup::should_show_shortcut_step() {
+        setup.step = SetupStep::ShortcutAsk;
+        #[cfg(target_os = "macos")]
+        {
+            setup.available_terminals = setup::detect_terminal_names();
+        }
+    } else {
+        setup.step = SetupStep::Welcome;
     }
+
     app.setup = Some(setup);
 }
 
@@ -94,10 +104,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
 
-    if std::env::args().any(|a| a == "--setup") {
-        return setup::run_setup();
-    }
-
+    #[cfg(target_os = "macos")]
     if std::env::args().any(|a| a == "--remove-setup") {
         return setup::remove_setup();
     }
@@ -880,6 +887,44 @@ fn handle_setup_input(app: &mut App, key: KeyCode, tx: &mpsc::Sender<AsyncMessag
     setup.error = None;
 
     match setup.step {
+        SetupStep::ShortcutAsk => match key {
+            KeyCode::Char('y') | KeyCode::Char('Y') | KeyCode::Enter => {
+                #[cfg(target_os = "macos")]
+                {
+                    if setup.available_terminals.is_empty() {
+                        setup.error = Some("No supported terminals found".to_string());
+                    } else {
+                        setup.step = SetupStep::ShortcutTerminalChoice;
+                    }
+                }
+                #[cfg(target_os = "linux")]
+                {
+                    match setup::install_shortcut() {
+                        Ok(()) => setup.step = SetupStep::Welcome,
+                        Err(e) => setup.error = Some(format!("Failed: {}", e)),
+                    }
+                }
+            }
+            KeyCode::Char('n') | KeyCode::Char('N') => {
+                setup.step = SetupStep::Welcome;
+            }
+            KeyCode::Char('q') | KeyCode::Esc => return SetupAction::Quit,
+            _ => {}
+        },
+        SetupStep::ShortcutTerminalChoice => match key {
+            KeyCode::Char(c) if c.is_ascii_digit() => {
+                let idx = (c as u8 - b'1') as usize;
+                if idx < setup.available_terminals.len() {
+                    #[cfg(target_os = "macos")]
+                    match setup::install_shortcut(idx) {
+                        Ok(()) => setup.step = SetupStep::Welcome,
+                        Err(e) => setup.error = Some(e),
+                    }
+                }
+            }
+            KeyCode::Esc => { setup.step = SetupStep::ShortcutAsk; }
+            _ => {}
+        },
         SetupStep::Welcome => match key {
             KeyCode::Enter => {
                 setup.step = SetupStep::GoogleAsk;
