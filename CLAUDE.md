@@ -51,3 +51,33 @@ UI ← EventCache.get(date) ←────────────────�
 - Events cached to `~/.cache/calendarchy/events.json`
 - Auth tokens stored in `~/.config/calendarchy/tokens.json`
 - Cache loads on startup for instant display; `fetched_months` not restored to force refresh
+
+## Release Process
+
+To release a new version (e.g., 0.1.3 -> 0.1.4):
+
+1. **Bump version** in `Cargo.toml`, `pkg/arch/PKGBUILD`, `pkg/arch-bin/PKGBUILD` (set sha256sums to SKIP temporarily)
+2. **Commit and push** to master
+3. **Tag and push**: `git tag v0.1.4 && git push origin v0.1.4`
+4. **Wait for GitHub Actions** (`.github/workflows/release.yml`) — it builds macOS ARM/Intel + Linux binaries, creates the GitHub Release, and updates the Homebrew tap automatically
+5. **Compute sha256sums** from released artifacts:
+   - Source: `curl -sL "https://github.com/sovanesyan/calendarchy/archive/v0.1.4.tar.gz" | sha256sum`
+   - Linux binary: `curl -sL "https://github.com/sovanesyan/calendarchy/releases/download/v0.1.4/calendarchy-x86_64-unknown-linux-gnu.tar.gz" | sha256sum`
+6. **Update PKGBUILDs** with real sha256sums, commit and push to master
+7. **Update AUR packages** (two separate repos, push manually):
+   - `git clone ssh://aur@aur.archlinux.org/calendarchy-bin.git` — copy from `pkg/arch-bin/PKGBUILD`
+   - `git clone ssh://aur@aur.archlinux.org/calendarchy.git` — copy from `pkg/arch/PKGBUILD`
+   - Generate `.SRCINFO`: `makepkg --printsrcinfo > .SRCINFO`
+   - Commit and push each
+
+### Package Locations
+
+- **Homebrew**: `sovanesyan/homebrew-calendarchy` (auto-updated by release workflow via `HOMEBREW_TAP_TOKEN` secret)
+- **AUR binary**: `ssh://aur@aur.archlinux.org/calendarchy-bin.git`
+- **AUR source**: `ssh://aur@aur.archlinux.org/calendarchy.git`
+
+### Website
+
+- GitHub Pages from `docs/` folder on master
+- Self-hosts Cascadia Code SemiBold font for block art logo
+- Terminal mockup SVG generated from ANSI capture via `/tmp/ansi2svg.py`
