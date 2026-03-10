@@ -32,13 +32,22 @@ jobs:
         run: cargo build --release --target ${{ matrix.target }}
 
       - name: Build hotkey helper
+        if: runner.os == 'macOS'
         run: swiftc -O swift/main.swift -o calendarchy-hotkey
 
-      - name: Package
+      - name: Package (macOS)
+        if: runner.os == 'macOS'
         run: |
           cp calendarchy-hotkey target/${{ matrix.target }}/release/
           cd target/${{ matrix.target }}/release
           tar czf ../../../calendarchy-${{ matrix.target }}.tar.gz calendarchy calendarchy-hotkey
+          cd ../../..
+
+      - name: Package (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          cd target/${{ matrix.target }}/release
+          tar czf ../../../calendarchy-${{ matrix.target }}.tar.gz calendarchy
           cd ../../..
 
       - name: Upload artifact
