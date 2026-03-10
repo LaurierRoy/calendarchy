@@ -1,182 +1,175 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 901 557" font-family="'JetBrains Mono','Fira Code','SF Mono','Cascadia Code',monospace">
-<rect width="901" height="557" rx="8" fill="#16161e"/>
-<rect width="901" height="36" rx="8" fill="#0e0e12"/>
-<rect y="28" width="901" height="8" fill="#0e0e12"/>
-<line x1="0" y1="36" x2="901" y2="36" stroke="#24243a" stroke-width="1"/>
-<circle cx="20" cy="18" r="5.5" fill="#f7768e"/>
-<circle cx="38" cy="18" r="5.5" fill="#e0af68"/>
-<circle cx="56" cy="18" r="5.5" fill="#9ece6a"/>
-<text x="450" y="22" fill="#565f89" text-anchor="middle" font-size="11">calendarchy</text>
-<text x="20.0" y="69.0" fill="#7dcfff" font-size="13" font-weight="bold">MARCH 2026</text>
-<text x="213.2" y="69.0" fill="#7dcfff" font-size="13" font-weight="bold">Tue Mar 10</text>
-<text x="599.6" y="69.0" fill="#7dcfff" font-size="13" font-weight="bold">Details</text>
-<text x="20.0" y="87.5" fill="#565f89" font-size="13">──────────────────────</text>
-<text x="213.2" y="87.5" fill="#565f89" font-size="13">────────────────────────────────────────</text>
-<text x="599.6" y="87.5" fill="#565f89" font-size="13">───────────────────────────────────</text>
-<text x="20.0" y="106.0" fill="#565f89" font-size="13">Mo Tu We Th Fr Sa Su</text>
-<text x="213.2" y="106.0" fill="#565f89" font-size="13">─</text>
-<text x="229.3" y="106.0" fill="#7aa2f7" font-size="13">Work</text>
-<text x="261.5" y="106.0" fill="#565f89" font-size="13"> ────────────────────────────────────────</text>
-<text x="599.6" y="106.0" fill="#ffffff" font-size="13" font-weight="bold">Catch-up w/ frontend team</text>
-<text x="164.9" y="124.5" fill="#565f89" font-size="13"> 1</text>
-<text x="237.4" y="124.5" fill="#565f89" font-size="13">09:00 Team standup</text>
-<text x="599.6" y="124.5" fill="#ffffff" font-size="13">🕒 13:00 - 13:45</text>
-<text x="20.0" y="143.0" fill="#c0caf5" font-size="13"> 2• 3• 4• 5• 6•</text>
-<text x="140.8" y="143.0" fill="#565f89" font-size="13"> 7</text>
-<text x="173.0" y="143.0" fill="#565f89" font-size="13">8</text>
-<text x="237.4" y="143.0" fill="#565f89" font-size="13">09:30 1:1 with Alex</text>
-<text x="599.6" y="143.0" fill="#e0af68" font-size="13">📍 https://dext.zoom.us/j/987654...</text>
-<text x="20.0" y="161.5" fill="#c0caf5" font-size="13"> 9•</text>
-<rect x="44.2" y="150.5" width="24.2" height="18.5" fill="#7aa2f7"/>
-<text x="44.2" y="161.5" fill="#16161e" font-size="13">10</text>
-<text x="68.3" y="161.5" fill="#c0caf5" font-size="13">11•12•13•</text>
-<text x="140.8" y="161.5" fill="#565f89" font-size="13">14•15•</text>
-<text x="237.4" y="161.5" fill="#565f89" font-size="13">10:00 1:1 with Priya</text>
-<text x="599.6" y="161.5" fill="#565f89" font-size="13">Google - Work</text>
-<text x="20.0" y="180.0" fill="#c0caf5" font-size="13">16•17•18•19•20•</text>
-<text x="140.8" y="180.0" fill="#565f89" font-size="13">21 22</text>
-<text x="237.4" y="180.0" fill="#565f89" font-size="13">10:30 Sprint planning</text>
-<text x="20.0" y="198.5" fill="#c0caf5" font-size="13">23•24•25•26•27•</text>
-<text x="140.8" y="198.5" fill="#565f89" font-size="13">28 29</text>
-<text x="237.4" y="198.5" fill="#565f89" font-size="13">11:30 1:1 with Marcus</text>
-<text x="599.6" y="198.5" fill="#9ece6a" font-size="13">[J] Join</text>
-<text x="20.0" y="217.0" fill="#c0caf5" font-size="13">30 31</text>
-<text x="213.2" y="217.0" fill="#7dcfff" font-size="13">▶</text>
-<text x="237.4" y="217.0" fill="#7dcfff" font-size="13" font-weight="bold">13:00 Catch-up w/ frontend team</text>
-<text x="599.6" y="217.0" fill="#565f89" font-size="13">[d] Decline</text>
-<text x="237.4" y="235.5" fill="#c0caf5" font-size="13">14:00 1:1 with Sofia</text>
-<text x="599.6" y="235.5" fill="#565f89" font-size="13">[x] Delete</text>
-<text x="52.2" y="254.0" fill="#565f89" font-size="13">M</text>
-<text x="76.4" y="254.0" fill="#565f89" font-size="13">T</text>
-<text x="100.5" y="254.0" fill="#565f89" font-size="13">W</text>
-<text x="124.7" y="254.0" fill="#565f89" font-size="13">T</text>
-<text x="148.8" y="254.0" fill="#565f89" font-size="13">F</text>
-<text x="173.0" y="254.0" fill="#565f89" font-size="13">S</text>
-<text x="197.1" y="254.0" fill="#565f89" font-size="13">S</text>
-<text x="237.4" y="254.0" fill="#c0caf5" font-size="13">14:30 Architecture review</text>
-<text x="20.0" y="272.5" fill="#565f89" font-size="13"> 8</text>
-<rect x="44.15" y="261.50" width="16.10" height="19.00" fill="#969696"/>
-<rect x="68.30" y="261.50" width="16.10" height="19.00" fill="#969696"/>
-<rect x="92.45" y="261.50" width="16.10" height="19.00" fill="#c8c8c8"/>
-<rect x="116.60" y="261.50" width="16.10" height="19.00" fill="#c8c8c8"/>
-<rect x="140.75" y="261.50" width="16.10" height="19.00" fill="#c8c8c8"/>
-<rect x="164.90" y="261.50" width="16.10" height="19.00" fill="#c8c8c8"/>
-<rect x="189.05" y="261.50" width="16.10" height="19.00" fill="#c8c8c8"/>
-<text x="237.4" y="272.5" fill="#c0caf5" font-size="13">16:00 Eng all-hands</text>
-<text x="599.6" y="272.5" fill="#ffffff" font-size="13" font-weight="bold">Participants:</text>
-<text x="20.0" y="291.0" fill="#565f89" font-size="13"> 9</text>
-<rect x="44.15" y="280.00" width="16.10" height="9.75" fill="#5a5aaa"/>
-<rect x="44.15" y="289.25" width="16.10" height="9.75" fill="#969696"/>
-<rect x="68.30" y="280.00" width="16.10" height="19.00" fill="#5a5aaa"/>
-<rect x="92.45" y="280.00" width="16.10" height="9.75" fill="#7aa2f7"/>
-<rect x="92.45" y="289.25" width="16.10" height="9.75" fill="#c8c8c8"/>
-<rect x="116.60" y="280.00" width="16.10" height="9.75" fill="#7aa2f7"/>
-<rect x="116.60" y="289.25" width="16.10" height="9.75" fill="#c8c8c8"/>
-<rect x="140.75" y="280.00" width="16.10" height="19.00" fill="#c8c8c8"/>
-<rect x="164.90" y="280.00" width="16.10" height="19.00" fill="#7aa2f7"/>
-<rect x="189.05" y="280.00" width="16.10" height="19.00" fill="#c8c8c8"/>
-<text x="237.4" y="291.0" fill="#c0caf5" font-size="13">17:00 Retro</text>
-<text x="615.7" y="291.0" fill="#7aa2f7" font-size="13">✓</text>
-<text x="631.8" y="291.0" fill="#c0caf5" font-size="13">You (org)</text>
-<text x="20.0" y="309.5" fill="#565f89" font-size="13">10</text>
-<rect x="44.15" y="298.50" width="16.10" height="19.00" fill="#5a5aaa"/>
-<rect x="68.30" y="298.50" width="16.10" height="19.00" fill="#5a5aaa"/>
-<rect x="92.45" y="298.50" width="16.10" height="19.00" fill="#c8c8c8"/>
-<rect x="116.60" y="298.50" width="16.10" height="19.00" fill="#c8c8c8"/>
-<rect x="140.75" y="298.50" width="16.10" height="19.00" fill="#7aa2f7"/>
-<rect x="164.90" y="298.50" width="16.10" height="9.75" fill="#7aa2f7"/>
-<rect x="164.90" y="307.75" width="16.10" height="9.75" fill="#c8c8c8"/>
-<rect x="189.05" y="298.50" width="16.10" height="19.00" fill="#c8c8c8"/>
-<text x="615.7" y="309.5" fill="#9ece6a" font-size="13">✓</text>
-<text x="631.8" y="309.5" fill="#c0caf5" font-size="13">Alex Chen</text>
-<text x="20.0" y="328.0" fill="#565f89" font-size="13">11</text>
-<rect x="44.15" y="317.00" width="16.10" height="19.00" fill="#969696"/>
-<rect x="68.30" y="317.00" width="16.10" height="19.00" fill="#5a5aaa"/>
-<rect x="92.45" y="317.00" width="16.10" height="19.00" fill="#c8c8c8"/>
-<rect x="116.60" y="317.00" width="16.10" height="9.75" fill="#7aa2f7"/>
-<rect x="116.60" y="326.25" width="16.10" height="9.75" fill="#c8c8c8"/>
-<rect x="140.75" y="317.00" width="16.10" height="9.75" fill="#7aa2f7"/>
-<rect x="140.75" y="326.25" width="16.10" height="9.75" fill="#c8c8c8"/>
-<rect x="164.90" y="317.00" width="16.10" height="19.00" fill="#c8c8c8"/>
-<rect x="189.05" y="317.00" width="16.10" height="19.00" fill="#7aa2f7"/>
-<text x="213.2" y="328.0" fill="#565f89" font-size="13">─</text>
-<text x="229.3" y="328.0" fill="#bb9af7" font-size="13">Personal</text>
-<text x="293.7" y="328.0" fill="#565f89" font-size="13"> ─────────────────────────────────────</text>
-<text x="615.7" y="328.0" fill="#9ece6a" font-size="13">✓</text>
-<text x="631.8" y="328.0" fill="#c0caf5" font-size="13">Priya Sharma</text>
-<text x="20.0" y="346.5" fill="#565f89" font-size="13">12</text>
-<rect x="44.15" y="335.50" width="16.10" height="19.00" fill="#969696"/>
-<rect x="68.30" y="335.50" width="16.10" height="19.00" fill="#969696"/>
-<rect x="92.45" y="335.50" width="16.10" height="19.00" fill="#c8c8c8"/>
-<rect x="116.60" y="335.50" width="16.10" height="19.00" fill="#c8c8c8"/>
-<rect x="140.75" y="335.50" width="16.10" height="19.00" fill="#c8c8c8"/>
-<rect x="164.90" y="335.50" width="16.10" height="19.00" fill="#c8c8c8"/>
-<rect x="189.05" y="335.50" width="16.10" height="19.00" fill="#7aa2f7"/>
-<text x="213.2" y="346.5" fill="#e0af68" font-size="13">○</text>
-<text x="237.4" y="346.5" fill="#e0af68" font-size="13" font-weight="bold">15:30 Pick up kids</text>
-<text x="615.7" y="346.5" fill="#565f89" font-size="13">?</text>
-<text x="631.8" y="346.5" fill="#c0caf5" font-size="13">Marcus Johnson</text>
-<text x="20.0" y="365.0" fill="#565f89" font-size="13">13</text>
-<rect x="44.15" y="354.00" width="16.10" height="19.00" fill="#969696"/>
-<rect x="68.30" y="354.00" width="16.10" height="19.00" fill="#7aa2f7"/>
-<rect x="92.45" y="354.00" width="16.10" height="19.00" fill="#c8c8c8"/>
-<rect x="116.60" y="354.00" width="16.10" height="19.00" fill="#c8c8c8"/>
-<rect x="140.75" y="354.00" width="16.10" height="19.00" fill="#c8c8c8"/>
-<rect x="164.90" y="354.00" width="16.10" height="19.00" fill="#c8c8c8"/>
-<rect x="189.05" y="354.00" width="16.10" height="19.00" fill="#c8c8c8"/>
-<text x="615.7" y="365.0" fill="#e0af68" font-size="13">?</text>
-<text x="631.8" y="365.0" fill="#c0caf5" font-size="13">Sofia Rodriguez</text>
-<text x="20.0" y="383.5" fill="#565f89" font-size="13">14</text>
-<rect x="44.15" y="372.50" width="16.10" height="19.00" fill="#969696"/>
-<rect x="68.30" y="372.50" width="16.10" height="19.00" fill="#7aa2f7"/>
-<rect x="92.45" y="372.50" width="16.10" height="19.00" fill="#7aa2f7"/>
-<rect x="116.60" y="372.50" width="16.10" height="19.00" fill="#c8c8c8"/>
-<rect x="140.75" y="372.50" width="16.10" height="19.00" fill="#c8c8c8"/>
-<rect x="164.90" y="372.50" width="16.10" height="19.00" fill="#c8c8c8"/>
-<rect x="189.05" y="372.50" width="16.10" height="19.00" fill="#c8c8c8"/>
-<text x="615.7" y="383.5" fill="#f7768e" font-size="13">✗</text>
-<text x="631.8" y="383.5" fill="#c0caf5" font-size="13">Jamie Lee</text>
-<text x="20.0" y="402.0" fill="#565f89" font-size="13">15</text>
-<rect x="44.15" y="391.00" width="16.10" height="19.00" fill="#969696"/>
-<rect x="68.30" y="391.00" width="16.10" height="19.00" fill="#7aa2f7"/>
-<rect x="92.45" y="391.00" width="16.10" height="19.00" fill="#c8c8c8"/>
-<rect x="116.60" y="391.00" width="16.10" height="19.00" fill="#c8c8c8"/>
-<rect x="140.75" y="391.00" width="16.10" height="19.00" fill="#c8c8c8"/>
-<rect x="164.90" y="391.00" width="16.10" height="19.00" fill="#c8c8c8"/>
-<rect x="189.05" y="391.00" width="16.10" height="19.00" fill="#c8c8c8"/>
-<text x="20.0" y="420.5" fill="#565f89" font-size="13">16</text>
-<rect x="44.15" y="409.50" width="16.10" height="19.00" fill="#969696"/>
-<rect x="68.30" y="409.50" width="16.10" height="19.00" fill="#7aa2f7"/>
-<rect x="92.45" y="409.50" width="16.10" height="19.00" fill="#c8c8c8"/>
-<rect x="116.60" y="409.50" width="16.10" height="19.00" fill="#c8c8c8"/>
-<rect x="140.75" y="409.50" width="16.10" height="19.00" fill="#c8c8c8"/>
-<rect x="164.90" y="409.50" width="16.10" height="19.00" fill="#c8c8c8"/>
-<rect x="189.05" y="409.50" width="16.10" height="19.00" fill="#c8c8c8"/>
-<text x="20.0" y="439.0" fill="#565f89" font-size="13">17</text>
-<rect x="44.15" y="428.00" width="16.10" height="19.00" fill="#969696"/>
-<rect x="68.30" y="428.00" width="16.10" height="9.75" fill="#7aa2f7"/>
-<rect x="68.30" y="437.25" width="16.10" height="9.75" fill="#c8c8c8"/>
-<rect x="92.45" y="428.00" width="16.10" height="19.00" fill="#c8c8c8"/>
-<rect x="116.60" y="428.00" width="16.10" height="19.00" fill="#c8c8c8"/>
-<rect x="140.75" y="428.00" width="16.10" height="19.00" fill="#c8c8c8"/>
-<rect x="164.90" y="428.00" width="16.10" height="19.00" fill="#c8c8c8"/>
-<rect x="189.05" y="428.00" width="16.10" height="19.00" fill="#c8c8c8"/>
-<text x="20.0" y="457.5" fill="#565f89" font-size="13">18</text>
-<rect x="44.15" y="446.50" width="16.10" height="19.00" fill="#969696"/>
-<rect x="68.30" y="446.50" width="16.10" height="19.00" fill="#c8c8c8"/>
-<rect x="92.45" y="446.50" width="16.10" height="19.00" fill="#c8c8c8"/>
-<rect x="116.60" y="446.50" width="16.10" height="19.00" fill="#7aa2f7"/>
-<rect x="140.75" y="446.50" width="16.10" height="19.00" fill="#c8c8c8"/>
-<rect x="164.90" y="446.50" width="16.10" height="19.00" fill="#c8c8c8"/>
-<rect x="189.05" y="446.50" width="16.10" height="19.00" fill="#c8c8c8"/>
-<text x="20.0" y="476.0" fill="#565f89" font-size="13">19</text>
-<rect x="44.15" y="465.00" width="16.10" height="19.00" fill="#969696"/>
-<rect x="68.30" y="465.00" width="16.10" height="19.00" fill="#c8c8c8"/>
-<rect x="92.45" y="465.00" width="16.10" height="19.00" fill="#c8c8c8"/>
-<rect x="116.60" y="465.00" width="16.10" height="19.00" fill="#c8c8c8"/>
-<rect x="140.75" y="465.00" width="16.10" height="19.00" fill="#c8c8c8"/>
-<rect x="164.90" y="465.00" width="16.10" height="19.00" fill="#c8c8c8"/>
-<rect x="189.05" y="465.00" width="16.10" height="19.00" fill="#c8c8c8"/>
-<text x="20.0" y="513.0" fill="#ffffff" font-size="13"> Next: Catch-up w/ frontend team in 29m</text>
-<text x="20.0" y="531.5" fill="#565f89" font-size="13"> jk:nav ^d/^u:scroll f:find n:now t:today r:refresh Esc:back q:quit</text>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 901 521" font-family="'JetBrains Mono','Fira Code','SF Mono','Cascadia Code',monospace">
+<rect width="901" height="521" rx="8" fill="#16161e"/>
+<text x="20.0" y="33.0" fill="#7dcfff" font-size="13" font-weight="bold">MARCH 2026</text>
+<text x="213.2" y="33.0" fill="#7dcfff" font-size="13" font-weight="bold">Tue Mar 10</text>
+<text x="599.6" y="33.0" fill="#7dcfff" font-size="13" font-weight="bold">Details</text>
+<text x="20.0" y="51.5" fill="#565f89" font-size="13">──────────────────────</text>
+<text x="213.2" y="51.5" fill="#565f89" font-size="13">────────────────────────────────────────</text>
+<text x="599.6" y="51.5" fill="#565f89" font-size="13">───────────────────────────────────</text>
+<text x="20.0" y="70.0" fill="#565f89" font-size="13">Mo Tu We Th Fr Sa Su</text>
+<text x="213.2" y="70.0" fill="#565f89" font-size="13">─</text>
+<text x="229.3" y="70.0" fill="#7aa2f7" font-size="13">Work</text>
+<text x="261.5" y="70.0" fill="#565f89" font-size="13"> ────────────────────────────────────────</text>
+<text x="599.6" y="70.0" fill="#ffffff" font-size="13" font-weight="bold">Catch-up w/ frontend team</text>
+<text x="164.9" y="88.5" fill="#565f89" font-size="13"> 1</text>
+<text x="237.4" y="88.5" fill="#565f89" font-size="13">09:00 Team standup</text>
+<text x="599.6" y="88.5" fill="#ffffff" font-size="13">🕒 13:00 - 13:45</text>
+<text x="20.0" y="107.0" fill="#c0caf5" font-size="13"> 2• 3• 4• 5• 6•</text>
+<text x="140.8" y="107.0" fill="#565f89" font-size="13"> 7</text>
+<text x="173.0" y="107.0" fill="#565f89" font-size="13">8</text>
+<text x="237.4" y="107.0" fill="#565f89" font-size="13">09:30 1:1 with Alex</text>
+<text x="599.6" y="107.0" fill="#e0af68" font-size="13">📍 https://dext.zoom.us/j/987654...</text>
+<text x="20.0" y="125.5" fill="#c0caf5" font-size="13"> 9•</text>
+<rect x="44.2" y="114.5" width="24.2" height="18.5" fill="#7aa2f7"/>
+<text x="44.2" y="125.5" fill="#16161e" font-size="13">10</text>
+<text x="68.3" y="125.5" fill="#c0caf5" font-size="13">11•12•13•</text>
+<text x="140.8" y="125.5" fill="#565f89" font-size="13">14•15•</text>
+<text x="237.4" y="125.5" fill="#565f89" font-size="13">10:00 1:1 with Priya</text>
+<text x="599.6" y="125.5" fill="#565f89" font-size="13">Google - Work</text>
+<text x="20.0" y="144.0" fill="#c0caf5" font-size="13">16•17•18•19•20•</text>
+<text x="140.8" y="144.0" fill="#565f89" font-size="13">21 22</text>
+<text x="237.4" y="144.0" fill="#565f89" font-size="13">10:30 Sprint planning</text>
+<text x="20.0" y="162.5" fill="#c0caf5" font-size="13">23•24•25•26•27•</text>
+<text x="140.8" y="162.5" fill="#565f89" font-size="13">28 29</text>
+<text x="237.4" y="162.5" fill="#565f89" font-size="13">11:30 1:1 with Marcus</text>
+<text x="599.6" y="162.5" fill="#9ece6a" font-size="13">[J] Join</text>
+<text x="20.0" y="181.0" fill="#c0caf5" font-size="13">30 31</text>
+<text x="213.2" y="181.0" fill="#7dcfff" font-size="13">▶</text>
+<text x="237.4" y="181.0" fill="#7dcfff" font-size="13" font-weight="bold">13:00 Catch-up w/ frontend team</text>
+<text x="599.6" y="181.0" fill="#565f89" font-size="13">[d] Decline</text>
+<text x="237.4" y="199.5" fill="#c0caf5" font-size="13">14:00 1:1 with Sofia</text>
+<text x="599.6" y="199.5" fill="#565f89" font-size="13">[x] Delete</text>
+<text x="52.2" y="218.0" fill="#565f89" font-size="13">M</text>
+<text x="76.4" y="218.0" fill="#565f89" font-size="13">T</text>
+<text x="100.5" y="218.0" fill="#565f89" font-size="13">W</text>
+<text x="124.7" y="218.0" fill="#565f89" font-size="13">T</text>
+<text x="148.8" y="218.0" fill="#565f89" font-size="13">F</text>
+<text x="173.0" y="218.0" fill="#565f89" font-size="13">S</text>
+<text x="197.1" y="218.0" fill="#565f89" font-size="13">S</text>
+<text x="237.4" y="218.0" fill="#c0caf5" font-size="13">14:30 Architecture review</text>
+<text x="20.0" y="236.5" fill="#565f89" font-size="13"> 8</text>
+<rect x="44.15" y="225.50" width="16.10" height="19.00" fill="#969696"/>
+<rect x="68.30" y="225.50" width="16.10" height="19.00" fill="#969696"/>
+<rect x="92.45" y="225.50" width="16.10" height="19.00" fill="#c8c8c8"/>
+<rect x="116.60" y="225.50" width="16.10" height="19.00" fill="#c8c8c8"/>
+<rect x="140.75" y="225.50" width="16.10" height="19.00" fill="#c8c8c8"/>
+<rect x="164.90" y="225.50" width="16.10" height="19.00" fill="#c8c8c8"/>
+<rect x="189.05" y="225.50" width="16.10" height="19.00" fill="#c8c8c8"/>
+<text x="237.4" y="236.5" fill="#c0caf5" font-size="13">16:00 Eng all-hands</text>
+<text x="599.6" y="236.5" fill="#ffffff" font-size="13" font-weight="bold">Participants:</text>
+<text x="20.0" y="255.0" fill="#565f89" font-size="13"> 9</text>
+<rect x="44.15" y="244.00" width="16.10" height="9.75" fill="#5a5aaa"/>
+<rect x="44.15" y="253.25" width="16.10" height="9.75" fill="#969696"/>
+<rect x="68.30" y="244.00" width="16.10" height="19.00" fill="#5a5aaa"/>
+<rect x="92.45" y="244.00" width="16.10" height="9.75" fill="#7aa2f7"/>
+<rect x="92.45" y="253.25" width="16.10" height="9.75" fill="#c8c8c8"/>
+<rect x="116.60" y="244.00" width="16.10" height="9.75" fill="#7aa2f7"/>
+<rect x="116.60" y="253.25" width="16.10" height="9.75" fill="#c8c8c8"/>
+<rect x="140.75" y="244.00" width="16.10" height="19.00" fill="#c8c8c8"/>
+<rect x="164.90" y="244.00" width="16.10" height="19.00" fill="#7aa2f7"/>
+<rect x="189.05" y="244.00" width="16.10" height="19.00" fill="#c8c8c8"/>
+<text x="237.4" y="255.0" fill="#c0caf5" font-size="13">17:00 Retro</text>
+<text x="615.7" y="255.0" fill="#7aa2f7" font-size="13">✓</text>
+<text x="631.8" y="255.0" fill="#c0caf5" font-size="13">You (org)</text>
+<text x="20.0" y="273.5" fill="#565f89" font-size="13">10</text>
+<rect x="44.15" y="262.50" width="16.10" height="19.00" fill="#5a5aaa"/>
+<rect x="68.30" y="262.50" width="16.10" height="19.00" fill="#5a5aaa"/>
+<rect x="92.45" y="262.50" width="16.10" height="19.00" fill="#c8c8c8"/>
+<rect x="116.60" y="262.50" width="16.10" height="19.00" fill="#c8c8c8"/>
+<rect x="140.75" y="262.50" width="16.10" height="19.00" fill="#7aa2f7"/>
+<rect x="164.90" y="262.50" width="16.10" height="9.75" fill="#7aa2f7"/>
+<rect x="164.90" y="271.75" width="16.10" height="9.75" fill="#c8c8c8"/>
+<rect x="189.05" y="262.50" width="16.10" height="19.00" fill="#c8c8c8"/>
+<text x="615.7" y="273.5" fill="#9ece6a" font-size="13">✓</text>
+<text x="631.8" y="273.5" fill="#c0caf5" font-size="13">Alex Chen</text>
+<text x="20.0" y="292.0" fill="#565f89" font-size="13">11</text>
+<rect x="44.15" y="281.00" width="16.10" height="19.00" fill="#969696"/>
+<rect x="68.30" y="281.00" width="16.10" height="19.00" fill="#5a5aaa"/>
+<rect x="92.45" y="281.00" width="16.10" height="19.00" fill="#c8c8c8"/>
+<rect x="116.60" y="281.00" width="16.10" height="9.75" fill="#7aa2f7"/>
+<rect x="116.60" y="290.25" width="16.10" height="9.75" fill="#c8c8c8"/>
+<rect x="140.75" y="281.00" width="16.10" height="9.75" fill="#7aa2f7"/>
+<rect x="140.75" y="290.25" width="16.10" height="9.75" fill="#c8c8c8"/>
+<rect x="164.90" y="281.00" width="16.10" height="19.00" fill="#c8c8c8"/>
+<rect x="189.05" y="281.00" width="16.10" height="19.00" fill="#7aa2f7"/>
+<text x="213.2" y="292.0" fill="#565f89" font-size="13">─</text>
+<text x="229.3" y="292.0" fill="#bb9af7" font-size="13">Personal</text>
+<text x="293.7" y="292.0" fill="#565f89" font-size="13"> ─────────────────────────────────────</text>
+<text x="615.7" y="292.0" fill="#9ece6a" font-size="13">✓</text>
+<text x="631.8" y="292.0" fill="#c0caf5" font-size="13">Priya Sharma</text>
+<text x="20.0" y="310.5" fill="#565f89" font-size="13">12</text>
+<rect x="44.15" y="299.50" width="16.10" height="19.00" fill="#969696"/>
+<rect x="68.30" y="299.50" width="16.10" height="19.00" fill="#969696"/>
+<rect x="92.45" y="299.50" width="16.10" height="19.00" fill="#c8c8c8"/>
+<rect x="116.60" y="299.50" width="16.10" height="19.00" fill="#c8c8c8"/>
+<rect x="140.75" y="299.50" width="16.10" height="19.00" fill="#c8c8c8"/>
+<rect x="164.90" y="299.50" width="16.10" height="19.00" fill="#c8c8c8"/>
+<rect x="189.05" y="299.50" width="16.10" height="19.00" fill="#7aa2f7"/>
+<text x="213.2" y="310.5" fill="#e0af68" font-size="13">○</text>
+<text x="237.4" y="310.5" fill="#e0af68" font-size="13" font-weight="bold">15:30 Pick up kids</text>
+<text x="615.7" y="310.5" fill="#565f89" font-size="13">?</text>
+<text x="631.8" y="310.5" fill="#c0caf5" font-size="13">Marcus Johnson</text>
+<text x="20.0" y="329.0" fill="#565f89" font-size="13">13</text>
+<rect x="44.15" y="318.00" width="16.10" height="19.00" fill="#969696"/>
+<rect x="68.30" y="318.00" width="16.10" height="19.00" fill="#7aa2f7"/>
+<rect x="92.45" y="318.00" width="16.10" height="19.00" fill="#c8c8c8"/>
+<rect x="116.60" y="318.00" width="16.10" height="19.00" fill="#c8c8c8"/>
+<rect x="140.75" y="318.00" width="16.10" height="19.00" fill="#c8c8c8"/>
+<rect x="164.90" y="318.00" width="16.10" height="19.00" fill="#c8c8c8"/>
+<rect x="189.05" y="318.00" width="16.10" height="19.00" fill="#c8c8c8"/>
+<text x="615.7" y="329.0" fill="#e0af68" font-size="13">?</text>
+<text x="631.8" y="329.0" fill="#c0caf5" font-size="13">Sofia Rodriguez</text>
+<text x="20.0" y="347.5" fill="#565f89" font-size="13">14</text>
+<rect x="44.15" y="336.50" width="16.10" height="19.00" fill="#969696"/>
+<rect x="68.30" y="336.50" width="16.10" height="19.00" fill="#7aa2f7"/>
+<rect x="92.45" y="336.50" width="16.10" height="19.00" fill="#7aa2f7"/>
+<rect x="116.60" y="336.50" width="16.10" height="19.00" fill="#c8c8c8"/>
+<rect x="140.75" y="336.50" width="16.10" height="19.00" fill="#c8c8c8"/>
+<rect x="164.90" y="336.50" width="16.10" height="19.00" fill="#c8c8c8"/>
+<rect x="189.05" y="336.50" width="16.10" height="19.00" fill="#c8c8c8"/>
+<text x="615.7" y="347.5" fill="#f7768e" font-size="13">✗</text>
+<text x="631.8" y="347.5" fill="#c0caf5" font-size="13">Jamie Lee</text>
+<text x="20.0" y="366.0" fill="#565f89" font-size="13">15</text>
+<rect x="44.15" y="355.00" width="16.10" height="19.00" fill="#969696"/>
+<rect x="68.30" y="355.00" width="16.10" height="19.00" fill="#7aa2f7"/>
+<rect x="92.45" y="355.00" width="16.10" height="19.00" fill="#c8c8c8"/>
+<rect x="116.60" y="355.00" width="16.10" height="19.00" fill="#c8c8c8"/>
+<rect x="140.75" y="355.00" width="16.10" height="19.00" fill="#c8c8c8"/>
+<rect x="164.90" y="355.00" width="16.10" height="19.00" fill="#c8c8c8"/>
+<rect x="189.05" y="355.00" width="16.10" height="19.00" fill="#c8c8c8"/>
+<text x="20.0" y="384.5" fill="#565f89" font-size="13">16</text>
+<rect x="44.15" y="373.50" width="16.10" height="19.00" fill="#969696"/>
+<rect x="68.30" y="373.50" width="16.10" height="19.00" fill="#7aa2f7"/>
+<rect x="92.45" y="373.50" width="16.10" height="19.00" fill="#c8c8c8"/>
+<rect x="116.60" y="373.50" width="16.10" height="19.00" fill="#c8c8c8"/>
+<rect x="140.75" y="373.50" width="16.10" height="19.00" fill="#c8c8c8"/>
+<rect x="164.90" y="373.50" width="16.10" height="19.00" fill="#c8c8c8"/>
+<rect x="189.05" y="373.50" width="16.10" height="19.00" fill="#c8c8c8"/>
+<text x="20.0" y="403.0" fill="#565f89" font-size="13">17</text>
+<rect x="44.15" y="392.00" width="16.10" height="19.00" fill="#969696"/>
+<rect x="68.30" y="392.00" width="16.10" height="9.75" fill="#7aa2f7"/>
+<rect x="68.30" y="401.25" width="16.10" height="9.75" fill="#c8c8c8"/>
+<rect x="92.45" y="392.00" width="16.10" height="19.00" fill="#c8c8c8"/>
+<rect x="116.60" y="392.00" width="16.10" height="19.00" fill="#c8c8c8"/>
+<rect x="140.75" y="392.00" width="16.10" height="19.00" fill="#c8c8c8"/>
+<rect x="164.90" y="392.00" width="16.10" height="19.00" fill="#c8c8c8"/>
+<rect x="189.05" y="392.00" width="16.10" height="19.00" fill="#c8c8c8"/>
+<text x="20.0" y="421.5" fill="#565f89" font-size="13">18</text>
+<rect x="44.15" y="410.50" width="16.10" height="19.00" fill="#969696"/>
+<rect x="68.30" y="410.50" width="16.10" height="19.00" fill="#c8c8c8"/>
+<rect x="92.45" y="410.50" width="16.10" height="19.00" fill="#c8c8c8"/>
+<rect x="116.60" y="410.50" width="16.10" height="19.00" fill="#7aa2f7"/>
+<rect x="140.75" y="410.50" width="16.10" height="19.00" fill="#c8c8c8"/>
+<rect x="164.90" y="410.50" width="16.10" height="19.00" fill="#c8c8c8"/>
+<rect x="189.05" y="410.50" width="16.10" height="19.00" fill="#c8c8c8"/>
+<text x="20.0" y="440.0" fill="#565f89" font-size="13">19</text>
+<rect x="44.15" y="429.00" width="16.10" height="19.00" fill="#969696"/>
+<rect x="68.30" y="429.00" width="16.10" height="19.00" fill="#c8c8c8"/>
+<rect x="92.45" y="429.00" width="16.10" height="19.00" fill="#c8c8c8"/>
+<rect x="116.60" y="429.00" width="16.10" height="19.00" fill="#c8c8c8"/>
+<rect x="140.75" y="429.00" width="16.10" height="19.00" fill="#c8c8c8"/>
+<rect x="164.90" y="429.00" width="16.10" height="19.00" fill="#c8c8c8"/>
+<rect x="189.05" y="429.00" width="16.10" height="19.00" fill="#c8c8c8"/>
+<text x="20.0" y="477.0" fill="#ffffff" font-size="13"> Next: Catch-up w/ frontend team in 29m</text>
+<text x="20.0" y="495.5" fill="#565f89" font-size="13"> jk:nav ^d/^u:scroll f:find n:now t:today r:refresh Esc:back q:quit</text>
 </svg>

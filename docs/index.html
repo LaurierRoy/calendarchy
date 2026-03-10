@@ -83,23 +83,24 @@
       color: var(--text);
     }
 
-    ul {
-      list-style: none;
-      margin-bottom: 16px;
+    .features-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
     }
 
-    ul li {
-      padding: 6px 0;
-      padding-left: 20px;
-      position: relative;
+    .feature-tile {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 20px;
+      font-size: 0.9rem;
     }
 
-    ul li::before {
-      content: '>';
-      position: absolute;
-      left: 0;
-      color: var(--accent);
-      font-weight: 700;
+    @media (max-width: 600px) {
+      .features-grid {
+        grid-template-columns: 1fr;
+      }
     }
 
     /* Install block */
@@ -110,6 +111,35 @@
       padding: 16px 20px;
       margin: 16px 0;
       font-size: 0.85rem;
+      position: relative;
+    }
+
+    .copy-btn {
+      position: absolute;
+      top: 12px;
+      right: 12px;
+      background: none;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      color: var(--text-dim);
+      font-family: inherit;
+      font-size: 0.7rem;
+      padding: 5px 6px;
+      line-height: 0;
+      display: flex;
+      align-items: center;
+      cursor: pointer;
+      transition: color 0.2s, border-color 0.2s;
+    }
+
+    .copy-btn:hover {
+      color: var(--accent);
+      border-color: var(--accent);
+    }
+
+    .copy-btn.copied {
+      color: var(--green);
+      border-color: var(--green);
     }
 
     .install .label {
@@ -126,27 +156,15 @@
       color: var(--text-dim);
     }
 
-    /* Keys */
     kbd {
       display: inline-block;
-      background: var(--surface);
+      background: var(--bg);
       border: 1px solid var(--border);
       border-radius: 4px;
-      padding: 2px 8px;
+      padding: 1px 6px;
       font-family: inherit;
       font-size: 0.8rem;
       color: var(--orange);
-    }
-
-    .keys-grid {
-      display: grid;
-      grid-template-columns: auto 1fr;
-      gap: 8px 20px;
-      align-items: center;
-    }
-
-    .keys-grid .desc {
-      color: var(--text-dim);
     }
 
     /* Links */
@@ -197,26 +215,20 @@
   </div>
 
   <section>
-    <h2>Features</h2>
-    <ul>
-      <li>Google Calendar and iCloud Calendar in one view</li>
-      <li>Month grid with day-by-day event browsing</li>
-      <li>One-click join for Zoom, Google Meet, and Teams links</li>
-      <li>Accept or decline events with a keystroke</li>
-      <li>Offline-first with local event caching</li>
-      <li>Zero-config Google sign-in via browser</li>
-      <li>iCloud via app-specific password (CalDAV)</li>
-      <li>Native macOS EventKit support for iCloud</li>
-    </ul>
-  </section>
-
-  <section>
     <h2>Install</h2>
-    <div class="install">
+    <div class="install" data-copy="brew tap sovanesyan/tap && brew install calendarchy">
+      <button class="copy-btn" onclick="copyInstall(this)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>
+      <div class="label">macOS (Homebrew)</div>
+      <code>brew tap sovanesyan/tap</code>
+      <br><code>brew install calendarchy</code>
+    </div>
+    <div class="install" data-copy="yay -S calendarchy-bin">
+      <button class="copy-btn" onclick="copyInstall(this)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>
       <div class="label">Arch Linux (AUR)</div>
       <code>yay -S calendarchy-bin</code>
     </div>
-    <div class="install">
+    <div class="install" data-copy="git clone https://github.com/sovanesyan/calendarchy.git && cd calendarchy && cargo build --release">
+      <button class="copy-btn" onclick="copyInstall(this)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>
       <div class="label">From source</div>
       <code>git clone https://github.com/sovanesyan/calendarchy.git</code>
       <br><code>cd calendarchy && cargo build --release</code>
@@ -224,21 +236,17 @@
   </section>
 
   <section>
-    <h2>Keyboard</h2>
-    <div class="keys-grid">
-      <kbd>h</kbd><span class="desc">Previous day</span>
-      <kbd>l</kbd><span class="desc">Next day</span>
-      <kbd>j</kbd><span class="desc">Next week</span>
-      <kbd>k</kbd><span class="desc">Previous week</span>
-      <kbd>t</kbd><span class="desc">Jump to today</span>
-      <kbd>o</kbd><span class="desc">Open meeting link</span>
-      <kbd>a</kbd><span class="desc">Accept event</span>
-      <kbd>d</kbd><span class="desc">Decline event</span>
-      <kbd>/</kbd><span class="desc">Search events</span>
-      <kbd>S</kbd><span class="desc">Setup wizard</span>
-      <kbd>q</kbd><span class="desc">Quit</span>
+    <h2>Features</h2>
+    <div class="features-grid">
+      <div class="feature-tile">Two keystrokes to your next meeting — <kbd>⌘⇧J</kbd> / <kbd>Super⇧J</kbd> to open, <kbd>⇧J</kbd> to join</div>
+      <div class="feature-tile">Instant startup — events cached locally, syncs in the background</div>
+      <div class="feature-tile">Google Calendar + iCloud side by side in one view</div>
+      <div class="feature-tile">Accept, decline, or RSVP without leaving the terminal</div>
+      <div class="feature-tile">Weekly availability heatmap — see your free time at a glance</div>
+      <div class="feature-tile">macOS and Linux — EventKit, CalDAV, or both</div>
     </div>
   </section>
+
 
   <section>
     <h2>Source</h2>
@@ -258,5 +266,16 @@
   </footer>
 </div>
 
+<script>
+function copyInstall(btn) {
+  const text = btn.parentElement.dataset.copy;
+  const icon = btn.innerHTML;
+  navigator.clipboard.writeText(text).then(() => {
+    btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>';
+    btn.classList.add('copied');
+    setTimeout(() => { btn.innerHTML = icon; btn.classList.remove('copied'); }, 1500);
+  });
+}
+</script>
 </body>
 </html>
