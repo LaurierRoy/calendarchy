@@ -39,15 +39,17 @@ jobs:
         if: runner.os == 'macOS'
         run: |
           cp calendarchy-hotkey target/${{ matrix.target }}/release/
+          cp LICENSE target/${{ matrix.target }}/release/
           cd target/${{ matrix.target }}/release
-          tar czf ../../../calendarchy-${{ matrix.target }}.tar.gz calendarchy calendarchy-hotkey
+          tar czf ../../../calendarchy-${{ matrix.target }}.tar.gz calendarchy calendarchy-hotkey LICENSE
           cd ../../..
 
       - name: Package (Linux)
         if: runner.os == 'Linux'
         run: |
+          cp LICENSE target/${{ matrix.target }}/release/
           cd target/${{ matrix.target }}/release
-          tar czf ../../../calendarchy-${{ matrix.target }}.tar.gz calendarchy
+          tar czf ../../../calendarchy-${{ matrix.target }}.tar.gz calendarchy LICENSE
           cd ../../..
 
       - name: Upload artifact
