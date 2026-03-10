@@ -75,6 +75,7 @@ jobs:
           echo "arm64_sha256=$(sha256sum calendarchy-aarch64-apple-darwin.tar.gz | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
           echo "x86_64_sha256=$(sha256sum calendarchy-x86_64-apple-darwin.tar.gz | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
           echo "linux_x86_64_sha256=$(sha256sum calendarchy-x86_64-unknown-linux-gnu.tar.gz | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+          echo "source_sha256=$(curl -sL "https://github.com/sovanesyan/calendarchy/archive/${GITHUB_REF_NAME}.tar.gz" | sha256sum | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
@@ -122,7 +123,6 @@ jobs:
           end
           FORMULA
 
-          # Clone tap repo, update formula, push
           git clone "https://x-access-token:${TAP_TOKEN}@github.com/sovanesyan/homebrew-calendarchy.git" /tmp/tap
           mkdir -p /tmp/tap/Formula
           cp /tmp/calendarchy.rb /tmp/tap/Formula/calendarchy.rb
@@ -132,3 +132,22 @@ jobs:
           git add Formula/calendarchy.rb
           git commit -m "Update calendarchy to ${VERSION}" || exit 0
           git push
+
+      - name: Update AUR packages
+        env:
+          AUR_SSH_KEY: ${{ secrets.AUR_SSH_KEY }}
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          SOURCE_SHA="${{ steps.hashes.outputs.source_sha256 }}"
+          LINUX_SHA="${{ steps.hashes.outputs.linux_x86_64_sha256 }}"
+
+          mkdir -p ~/.ssh
+          echo "$AUR_SSH_KEY" > ~/.ssh/aur
+          chmod 600 ~/.ssh/aur
+          printf 'Host aur.archlinux.org\n  IdentityFile ~/.ssh/aur\n  User aur\n' > ~/.ssh/config
+          ssh-keyscan aur.archlinux.org >> ~/.ssh/known_hosts 2>/dev/null
+
+          git config --global user.name "Serge Ovanesyan"
+          git config --global user.email "sovanesyan@users.noreply.github.com"
+
+          .github/scripts/update-aur.sh "$VERSION" "$SOURCE_SHA" "$LINUX_SHA"
