@@ -184,8 +184,8 @@ fn start_auth_for_account(app: &mut App, account_idx: usize, tx: &mpsc::Sender<A
     match app.config.accounts[account_idx].clone() {
         AccountConfig::Google(g) => {
             let gc = GoogleConfig {
-                client_id: g.client_id,
-                client_secret: g.client_secret,
+                client_id: config::google_client_id(),
+                client_secret: config::google_client_secret(),
                 calendar_id: g.calendar_id,
                 category: None,
             };
@@ -288,8 +288,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         google_refresh_tokens.push((
                             i,
                             g.id.clone(),
-                            g.client_id.clone(),
-                            g.client_secret.clone(),
+                            config::google_client_id(),
+                            config::google_client_secret(),
                             refresh_token.clone(),
                         ));
                         app.loading[i] = true;
@@ -687,8 +687,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                         app.needs_fetch[i] = true;
                                                     } else if let Some(ref rt) = tokens.refresh_token {
                                                         let gc = GoogleConfig {
-                                                            client_id: g.client_id.clone(),
-                                                            client_secret: g.client_secret.clone(),
+                                                            client_id: config::google_client_id(),
+                                                            client_secret: config::google_client_secret(),
                                                             calendar_id: g.calendar_id.clone(),
                                                             category: None,
                                                         };
@@ -711,8 +711,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                         });
                                                     } else {
                                                         let gc = GoogleConfig {
-                                                            client_id: g.client_id.clone(),
-                                                            client_secret: g.client_secret.clone(),
+                                                            client_id: config::google_client_id(),
+                                                            client_secret: config::google_client_secret(),
                                                             calendar_id: g.calendar_id.clone(),
                                                             category: None,
                                                         };
@@ -720,8 +720,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                     }
                                                 } else {
                                                     let gc = GoogleConfig {
-                                                        client_id: g.client_id.clone(),
-                                                        client_secret: g.client_secret.clone(),
+                                                        client_id: config::google_client_id(),
+                                                        client_secret: config::google_client_secret(),
                                                         calendar_id: g.calendar_id.clone(),
                                                         category: None,
                                                     };
@@ -1128,10 +1128,6 @@ fn handle_setup_input(app: &mut App, key: KeyCode, tx: &mpsc::Sender<AsyncMessag
                 app.config.accounts.push(AccountConfig::Google(config::GoogleAccountConfig {
                     id: id.clone(),
                     name: None,
-                    client_id: std::env::var("CALENDARCHY_GOOGLE_CLIENT_ID")
-                        .unwrap_or_else(|_| config::DEFAULT_GOOGLE_CLIENT_ID.to_string()),
-                    client_secret: std::env::var("CALENDARCHY_GOOGLE_CLIENT_SECRET")
-                        .unwrap_or_else(|_| config::DEFAULT_GOOGLE_CLIENT_SECRET.to_string()),
                     calendar_id: "primary".to_string(),
                     category: Some("Work".to_string()),
                 }));
@@ -1142,8 +1138,8 @@ fn handle_setup_input(app: &mut App, key: KeyCode, tx: &mpsc::Sender<AsyncMessag
             let account_idx = app.config.accounts.iter().position(|a| matches!(a, AccountConfig::Google(_))).unwrap_or(0);
             if let Some(AccountConfig::Google(g)) = app.config.accounts.get(account_idx) {
                 let gc = GoogleConfig {
-                    client_id: g.client_id.clone(),
-                    client_secret: g.client_secret.clone(),
+                    client_id: config::google_client_id(),
+                    client_secret: config::google_client_secret(),
                     calendar_id: g.calendar_id.clone(),
                     category: None,
                 };
@@ -1318,10 +1314,6 @@ fn handle_setup_input(app: &mut App, key: KeyCode, tx: &mpsc::Sender<AsyncMessag
             app.config.accounts.push(AccountConfig::Google(config::GoogleAccountConfig {
                 id,
                 name: None,
-                client_id: std::env::var("CALENDARCHY_GOOGLE_CLIENT_ID")
-                    .unwrap_or_else(|_| config::DEFAULT_GOOGLE_CLIENT_ID.to_string()),
-                client_secret: std::env::var("CALENDARCHY_GOOGLE_CLIENT_SECRET")
-                    .unwrap_or_else(|_| config::DEFAULT_GOOGLE_CLIENT_SECRET.to_string()),
                 calendar_id: "primary".to_string(),
                 category: Some("Work".to_string()),
             }));

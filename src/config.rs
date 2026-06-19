@@ -134,15 +134,21 @@ pub struct GoogleAccountConfig {
     /// Display name for this account (shown in UI)
     #[serde(default)]
     pub name: Option<String>,
-    #[serde(default = "default_google_client_id")]
-    pub client_id: String,
-    #[serde(default = "default_google_client_secret")]
-    pub client_secret: String,
     #[serde(default = "default_calendar_id")]
     pub calendar_id: String,
     /// References a Category by name from the top-level categories list
     #[serde(default)]
     pub category: Option<String>,
+}
+
+/// Return the effective Google OAuth client ID (env var or compiled default)
+pub fn google_client_id() -> String {
+    default_google_client_id()
+}
+
+/// Return the effective Google OAuth client secret (env var or compiled default)
+pub fn google_client_secret() -> String {
+    default_google_client_secret()
 }
 
 /// Account configuration for an iCloud Calendar
@@ -244,8 +250,6 @@ impl Config {
                 config.accounts.push(AccountConfig::Google(GoogleAccountConfig {
                     id: generate_account_id(),
                     name: None,
-                    client_id: google.client_id.clone(),
-                    client_secret: google.client_secret.clone(),
                     calendar_id: google.calendar_id.clone(),
                     category: google.category.as_ref().map(|c| c.name.clone()),
                 }));
@@ -285,8 +289,8 @@ impl Config {
                             config.categories.iter().find(|c| c.name == *name).cloned()
                         });
                         config.google = Some(GoogleConfig {
-                            client_id: g.client_id.clone(),
-                            client_secret: g.client_secret.clone(),
+                            client_id: google_client_id(),
+                            client_secret: google_client_secret(),
                             calendar_id: g.calendar_id.clone(),
                             category,
                         });
@@ -349,8 +353,6 @@ impl Config {
                 accounts.push(AccountConfig::Google(GoogleAccountConfig {
                     id: generate_account_id(),
                     name: None,
-                    client_id: google.client_id.clone(),
-                    client_secret: google.client_secret.clone(),
                     calendar_id: google.calendar_id.clone(),
                     category: cat_name,
                 }));
@@ -603,7 +605,6 @@ mod tests {
         // Check account data directly
         match &config.accounts[0] {
             AccountConfig::Google(g) => {
-                assert_eq!(g.client_id, "test-g");
                 assert_eq!(g.calendar_id, "primary");
                 assert_eq!(g.category.as_deref(), Some("Work"));
             }
@@ -672,8 +673,6 @@ mod tests {
                 accounts.push(AccountConfig::Google(GoogleAccountConfig {
                     id: generate_account_id(),
                     name: None,
-                    client_id: google.client_id.clone(),
-                    client_secret: google.client_secret.clone(),
                     calendar_id: google.calendar_id.clone(),
                     category: cat_name,
                 }));
@@ -717,7 +716,6 @@ mod tests {
         let accounts = obj["accounts"].as_array().unwrap();
         assert_eq!(accounts.len(), 2);
         assert_eq!(accounts[0]["type"], "google");
-        assert_eq!(accounts[0]["client_id"], "a");
         assert_eq!(accounts[1]["type"], "icloud");
         assert_eq!(accounts[1]["apple_id"], "u@i.com");
     }
@@ -778,7 +776,7 @@ mod tests {
         assert!(config.icloud.is_some());
 
         let g = config.google.as_ref().unwrap();
-        assert_eq!(g.client_id, "roundtrip-g");
+        assert_eq!(g.client_id, DEFAULT_GOOGLE_CLIENT_ID);
         assert_eq!(g.calendar_id, "primary");
         let g_cat = g.category.as_ref().unwrap();
         assert_eq!(g_cat.name, "Work");
