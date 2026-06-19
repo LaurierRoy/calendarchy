@@ -12,7 +12,7 @@ mod setup;
 mod ui;
 mod utils;
 
-use app::{App, ICloudMethod, NavigationMode, PendingAction, SetupState, SetupStep};
+use app::{App, NavigationMode, PendingAction, SetupState, SetupStep};
 use auth::{AccountAuthState, CalendarEntry, GoogleAuthState, ICloudAuthState};
 use cache::{DisplayEvent, EventId};
 use chrono::{NaiveDate, Timelike};
@@ -234,19 +234,6 @@ fn start_auth_for_account(app: &mut App, account_idx: usize, tx: &mpsc::Sender<A
 fn open_setup_wizard(app: &mut App) {
     let mut setup = SetupState::new();
     setup.eventkit_available = eventkit::is_available();
-
-    if !app.config.accounts.is_empty() {
-        setup.step = SetupStep::GoogleAsk;
-    } else if setup::should_show_shortcut_step() {
-        setup.step = SetupStep::ShortcutAsk;
-        #[cfg(target_os = "macos")]
-        {
-            setup.available_terminals = setup::detect_terminal_names();
-        }
-    } else {
-        setup.step = SetupStep::Welcome;
-    }
-
     app.setup = Some(setup);
 }
 
@@ -261,6 +248,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     if std::env::args().any(|a| a == "--remove-setup") {
         return setup::remove_setup();
     }
+
+    let run_setup = std::env::args().any(|a| a == "--setup");
 
     let mut app = App::new();
 
@@ -322,7 +311,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    if app.config.accounts.is_empty() {
+    if run_setup {
         open_setup_wizard(&mut app);
     }
 
@@ -455,6 +444,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 pending_action: app.pending_action.as_ref(),
                 search: app.search.as_ref(),
                 setup: app.setup.as_ref(),
+                accounts: &app.config.accounts,
+                categories: &app.config.categories,
                 account_labels: &account_labels,
                 account_accents: &account_accents,
             };
@@ -564,8 +555,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     app.needs_fetch[account_idx] = true;
                     app.set_status("Connected to Google Calendar!");
                     if let Some(ref mut setup) = app.setup {
-                        if setup.step == SetupStep::GoogleAuthWaiting {
-                            setup.step = SetupStep::ICloudAsk;
+                        if setup.step == SetupStep::AuthWaiting {
+                            setup.step = SetupStep::EditAccount;
                         }
                     }
                 }
@@ -573,9 +564,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     app.account_auths[account_idx] = AccountAuthState::Google(GoogleAuthState::Error(msg.clone()));
                     app.set_status(format!("Google: {}", msg));
                     if let Some(ref mut setup) = app.setup {
-                        if setup.step == SetupStep::GoogleAuthWaiting {
+                        if setup.step == SetupStep::AuthWaiting {
                             setup.error = Some(format!("Google auth failed: {}", msg));
-                            setup.step = SetupStep::ICloudAsk;
+                            setup.step = SetupStep::EditAccount;
                         }
                     }
                 }
@@ -1131,235 +1122,420 @@ enum SetupAction {
 }
 
 fn handle_setup_input(app: &mut App, key: KeyCode, tx: &mpsc::Sender<AsyncMessage>) -> SetupAction {
-    if let Some(ref setup) = app.setup {
-        if setup.step == SetupStep::GoogleAsk
-            && matches!(key, KeyCode::Char('y') | KeyCode::Char('Y') | KeyCode::Enter)
-        {
-            if !app.config.accounts.iter().any(|a| matches!(a, AccountConfig::Google(_))) {
-                let id = generate_account_id();
-                app.config.accounts.push(AccountConfig::Google(config::GoogleAccountConfig {
-                    id: id.clone(),
-                    name: None,
-                    calendar_id: "primary".to_string(),
-                    category: Some("Work".to_string()),
-                }));
-                app.resize_accounts(app.config.accounts.len());
-                let _ = app.config.save();
-            }
+    let current_step = app.setup.as_ref().map(|s| s.step.clone());
 
-            let account_idx = app.config.accounts.iter().position(|a| matches!(a, AccountConfig::Google(_))).unwrap_or(0);
-            if let Some(AccountConfig::Google(g)) = app.config.accounts.get(account_idx) {
-                let gc = GoogleConfig {
-                    client_id: config::google_client_id(),
-                    client_secret: config::google_client_secret(),
-                    calendar_id: g.calendar_id.clone(),
-                    category: None,
-                };
-                start_google_auth(app, gc, account_idx, tx);
-            }
-            let setup = app.setup.as_mut().unwrap();
-            setup.google_enabled = true;
-            setup.step = SetupStep::GoogleAuthWaiting;
-            return SetupAction::Continue;
-        }
+    if let Some(setup) = app.setup.as_mut() {
+        setup.error = None;
     }
 
-    let setup = app.setup.as_mut().unwrap();
-    setup.error = None;
-
-    match setup.step {
-        SetupStep::ShortcutAsk => match key {
-            KeyCode::Char('y') | KeyCode::Char('Y') | KeyCode::Enter => {
-                #[cfg(target_os = "macos")]
-                {
-                    if setup.available_terminals.is_empty() {
-                        setup.error = Some("No supported terminals found".to_string());
-                    } else {
-                        setup.step = SetupStep::ShortcutTerminalChoice;
-                    }
-                }
-                #[cfg(target_os = "linux")]
-                {
-                    match setup::install_shortcut() {
-                        Ok(()) => setup.step = SetupStep::Welcome,
-                        Err(e) => setup.error = Some(format!("Failed: {}", e)),
-                    }
-                }
-            }
-            KeyCode::Char('n') | KeyCode::Char('N') => {
-                setup.step = SetupStep::Welcome;
-            }
-            KeyCode::Char('q') | KeyCode::Esc => return SetupAction::Quit,
-            _ => {}
-        },
-        SetupStep::ShortcutTerminalChoice => match key {
+    match current_step {
+        Some(SetupStep::AccountList) => match key {
             KeyCode::Char(c) if c.is_ascii_digit() => {
                 let idx = (c as u8 - b'1') as usize;
-                if idx < setup.available_terminals.len() {
-                    #[cfg(target_os = "macos")]
-                    match setup::install_shortcut(idx) {
-                        Ok(()) => setup.step = SetupStep::Welcome,
-                        Err(e) => setup.error = Some(e),
+                if idx < app.config.accounts.len() {
+                    if let Some(setup) = app.setup.as_mut() {
+                        setup.editing_idx = Some(idx);
+                        setup.editing_is_new = false;
+                        setup.step = SetupStep::EditAccount;
                     }
                 }
             }
-            KeyCode::Esc => { setup.step = SetupStep::ShortcutAsk; }
-            _ => {}
-        },
-        SetupStep::Welcome => match key {
-            KeyCode::Enter => {
-                setup.step = SetupStep::GoogleAsk;
-            }
-            KeyCode::Char('q') | KeyCode::Esc => return SetupAction::Quit,
-            _ => {}
-        },
-        SetupStep::GoogleAsk => match key {
-            KeyCode::Char('n') | KeyCode::Char('N') => {
-                setup.step = SetupStep::ICloudAsk;
-            }
-            KeyCode::Esc => { setup.step = SetupStep::Welcome; }
-            _ => {}
-        },
-        SetupStep::GoogleAuthWaiting => match key {
-            KeyCode::Esc => {
-                setup.step = SetupStep::ICloudAsk;
-            }
-            _ => {}
-        },
-        SetupStep::ICloudAsk => match key {
-            KeyCode::Char('y') | KeyCode::Char('Y') | KeyCode::Enter => {
-                if setup.eventkit_available {
-                    setup.step = SetupStep::ICloudMethod;
-                } else {
-                    setup.step = SetupStep::ICloudOpenUrl;
-                    open_url("https://appleid.apple.com/account/manage");
+            KeyCode::Char('g') | KeyCode::Char('G') => {
+                let id = generate_account_id();
+                app.config.accounts.push(AccountConfig::Google(config::GoogleAccountConfig {
+                    id,
+                    name: None,
+                    calendar_id: "primary".to_string(),
+                    category: app.config.categories.first().map(|c| c.name.clone()),
+                }));
+                app.resize_accounts(app.config.accounts.len());
+                let idx = app.config.accounts.len() - 1;
+                let _ = app.config.save();
+                if let Some(setup) = app.setup.as_mut() {
+                    setup.editing_idx = Some(idx);
+                    setup.editing_is_new = true;
+                    setup.step = SetupStep::EditAccount;
                 }
             }
-            KeyCode::Char('n') | KeyCode::Char('N') => {
-                setup.step = SetupStep::Done;
-            }
-            KeyCode::Esc => {
-                setup.step = SetupStep::GoogleAsk;
-            }
-            _ => {}
-        },
-        SetupStep::ICloudMethod => match key {
-            KeyCode::Char('1') | KeyCode::Enter => {
-                setup.icloud_method = Some(ICloudMethod::EventKit);
-                setup.step = SetupStep::Done;
-            }
-            KeyCode::Char('2') => {
-                setup.icloud_method = Some(ICloudMethod::CalDav);
-                setup.step = SetupStep::ICloudOpenUrl;
-                open_url("https://appleid.apple.com/account/manage");
-            }
-            KeyCode::Esc => { setup.step = SetupStep::ICloudAsk; }
-            _ => {}
-        },
-        SetupStep::ICloudOpenUrl => match key {
-            KeyCode::Enter => { setup.step = SetupStep::ICloudAppleId; }
-            KeyCode::Esc => {
-                if setup.eventkit_available {
-                    setup.step = SetupStep::ICloudMethod;
-                } else {
-                    setup.step = SetupStep::ICloudAsk;
+            KeyCode::Char('i') | KeyCode::Char('I') => {
+                let method = if app.setup.as_ref().map_or(false, |s| s.eventkit_available) { "eventkit" } else { "caldav" };
+                let id = generate_account_id();
+                app.config.accounts.push(AccountConfig::ICloud(config::ICloudAccountConfig {
+                    id,
+                    name: None,
+                    method: method.to_string(),
+                    apple_id: None,
+                    app_password: None,
+                    category: app.config.categories.first().map(|c| c.name.clone()),
+                }));
+                app.resize_accounts(app.config.accounts.len());
+                let idx = app.config.accounts.len() - 1;
+                let _ = app.config.save();
+                if let Some(setup) = app.setup.as_mut() {
+                    setup.editing_idx = Some(idx);
+                    setup.editing_is_new = true;
+                    setup.step = SetupStep::EditAccount;
                 }
             }
-            _ => {}
-        },
-        SetupStep::ICloudAppleId => match key {
-            KeyCode::Enter => {
-                let val = setup.input.trim().to_string();
-                if val.is_empty() {
-                    setup.error = Some("Apple ID cannot be empty".to_string());
-                } else {
-                    setup.icloud_apple_id = Some(val);
-                    setup.input.clear();
-                    setup.step = SetupStep::ICloudPassword;
+            KeyCode::Char('q') | KeyCode::Esc => {
+                if app.config.accounts.is_empty() {
+                    return SetupAction::Quit;
                 }
-            }
-            KeyCode::Esc => {
-                setup.input.clear();
-                setup.step = SetupStep::ICloudOpenUrl;
-            }
-            KeyCode::Backspace => { setup.input.pop(); }
-            KeyCode::Char(c) => { setup.input.push(c); }
-            _ => {}
-        },
-        SetupStep::ICloudPassword => match key {
-            KeyCode::Enter => {
-                let val = setup.input.trim().to_string();
-                if val.is_empty() {
-                    setup.error = Some("App password cannot be empty".to_string());
-                } else {
-                    setup.icloud_password = Some(val);
-                    setup.input.clear();
+                if let Some(setup) = app.setup.as_mut() {
                     setup.step = SetupStep::Done;
                 }
             }
-            KeyCode::Esc => {
-                setup.input.clear();
-                setup.step = SetupStep::ICloudAppleId;
-            }
-            KeyCode::Backspace => { setup.input.pop(); }
-            KeyCode::Char(c) => { setup.input.push(c); }
             _ => {}
         },
-        SetupStep::Done => {}
-    }
 
-    if setup.step == SetupStep::Done {
-        let has_google = setup.google_enabled;
-        let has_eventkit = setup.icloud_method == Some(ICloudMethod::EventKit);
-        let has_caldav = setup.icloud_apple_id.is_some();
-        let already_has_google = app.config.accounts.iter().any(|a| matches!(a, AccountConfig::Google(_)));
-        let already_has_icloud = app.config.accounts.iter().any(|a| matches!(a, AccountConfig::ICloud(_)));
+        Some(SetupStep::EditAccount) => {
+            let editing = app.setup.as_ref()
+                .and_then(|s| s.editing_idx)
+                .and_then(|i| app.config.accounts.get(i))
+                .cloned();
 
-        if !has_google && !has_eventkit && !has_caldav && !already_has_google && !already_has_icloud {
-            setup.error = Some("Set up at least one calendar".to_string());
-            setup.step = SetupStep::GoogleAsk;
-            return SetupAction::Continue;
-        }
-
-        if has_google && !already_has_google {
-            let id = generate_account_id();
-            app.config.accounts.push(AccountConfig::Google(config::GoogleAccountConfig {
-                id,
-                name: None,
-                calendar_id: "primary".to_string(),
-                category: Some("Work".to_string()),
-            }));
-        }
-        if has_eventkit && !already_has_icloud {
-            app.config.accounts.push(AccountConfig::ICloud(config::ICloudAccountConfig {
-                id: generate_account_id(),
-                name: None,
-                method: "eventkit".to_string(),
-                apple_id: None,
-                app_password: None,
-                category: Some("Personal".to_string()),
-            }));
-        } else if let (Some(apple_id), Some(app_password)) =
-            (setup.icloud_apple_id.take(), setup.icloud_password.take())
-        {
-            if !already_has_icloud {
-                app.config.accounts.push(AccountConfig::ICloud(config::ICloudAccountConfig {
-                    id: generate_account_id(),
-                    name: None,
-                    method: "caldav".to_string(),
-                    apple_id: Some(apple_id),
-                    app_password: Some(app_password),
-                    category: Some("Personal".to_string()),
-                }));
+            match (&editing, key) {
+                (Some(AccountConfig::Google(_)), KeyCode::Char('1')) => {
+                    if let Some(AccountConfig::Google(g)) = &editing {
+                        if let Some(setup) = app.setup.as_mut() {
+                            setup.input = g.name.clone().unwrap_or_default();
+                            setup.step = SetupStep::EditName;
+                        }
+                    }
+                }
+                (Some(AccountConfig::Google(_)), KeyCode::Char('2')) => {
+                    if let Some(AccountConfig::Google(g)) = &editing {
+                        if let Some(setup) = app.setup.as_mut() {
+                            setup.input = g.calendar_id.clone();
+                            setup.step = SetupStep::EditGoogleCalendarId;
+                        }
+                    }
+                }
+                (Some(AccountConfig::Google(_)), KeyCode::Char('3'))
+                | (Some(AccountConfig::ICloud(_)), KeyCode::Char('3')) => {
+                    if let Some(setup) = app.setup.as_mut() {
+                        setup.step = SetupStep::PickCategory;
+                    }
+                }
+                (Some(AccountConfig::Google(_)), KeyCode::Char('4')) => {
+                    let gc = app.setup.as_ref().and_then(|s| s.editing_idx)
+                        .and_then(|idx| app.config.accounts.get(idx))
+                        .and_then(|a| match a {
+                            AccountConfig::Google(g) => Some(GoogleConfig {
+                                client_id: config::google_client_id(),
+                                client_secret: config::google_client_secret(),
+                                calendar_id: g.calendar_id.clone(),
+                                category: None,
+                            }),
+                            _ => None,
+                        });
+                    if let (Some(gc), Some(idx)) = (gc, app.setup.as_ref().and_then(|s| s.editing_idx)) {
+                        start_google_auth(app, gc, idx, tx);
+                        if let Some(setup) = app.setup.as_mut() {
+                            setup.step = SetupStep::AuthWaiting;
+                        }
+                    }
+                }
+                (Some(AccountConfig::ICloud(_)), KeyCode::Char('1')) => {
+                    if let Some(AccountConfig::ICloud(c)) = &editing {
+                        if let Some(setup) = app.setup.as_mut() {
+                            setup.input = c.name.clone().unwrap_or_default();
+                            setup.step = SetupStep::EditName;
+                        }
+                    }
+                }
+                (Some(AccountConfig::ICloud(i)), KeyCode::Char('2')) => {
+                    if app.setup.as_ref().map_or(false, |s| s.eventkit_available) || i.method != "eventkit" {
+                        if let Some(setup) = app.setup.as_mut() {
+                            setup.step = SetupStep::ICloudMethod;
+                        }
+                    }
+                }
+                (Some(AccountConfig::ICloud(i)), KeyCode::Char('4')) if i.method == "caldav" => {
+                    if let Some(setup) = app.setup.as_mut() {
+                        setup.input = i.apple_id.clone().unwrap_or_default();
+                        setup.step = SetupStep::ICloudAppleId;
+                    }
+                }
+                (Some(AccountConfig::ICloud(i)), KeyCode::Char('5')) if i.method == "caldav" => {
+                    if let Some(setup) = app.setup.as_mut() {
+                        setup.input.clear();
+                        setup.step = SetupStep::ICloudAppPassword;
+                    }
+                }
+                (Some(_), KeyCode::Char('d') | KeyCode::Char('D')) => {
+                    if let Some(setup) = app.setup.as_mut() {
+                        setup.step = SetupStep::DeleteConfirm;
+                    }
+                }
+                (_, KeyCode::Esc) => {
+                    let _ = app.config.save();
+                    if let Some(setup) = app.setup.as_mut() {
+                        setup.editing_idx = None;
+                        setup.editing_is_new = false;
+                        setup.step = SetupStep::AccountList;
+                    }
+                }
+                _ => {}
             }
         }
 
+        Some(SetupStep::EditName) => match key {
+            KeyCode::Enter => {
+                let name = app.setup.as_ref().map(|s| s.input.clone()).unwrap_or_default();
+                let name = if name.trim().is_empty() { None } else { Some(name.trim().to_string()) };
+                if let Some(idx) = app.setup.as_ref().and_then(|s| s.editing_idx) {
+                    if idx < app.config.accounts.len() {
+                        match app.config.accounts.get_mut(idx) {
+                            Some(AccountConfig::Google(g)) => g.name = name,
+                            Some(AccountConfig::ICloud(i)) => i.name = name,
+                            None => {}
+                        }
+                    }
+                }
+                let _ = app.config.save();
+                if let Some(setup) = app.setup.as_mut() {
+                    setup.input.clear();
+                    setup.step = SetupStep::EditAccount;
+                }
+            }
+            KeyCode::Esc => {
+                if let Some(setup) = app.setup.as_mut() {
+                    setup.input.clear();
+                    setup.step = SetupStep::EditAccount;
+                }
+            }
+            KeyCode::Backspace => {
+                if let Some(setup) = app.setup.as_mut() {
+                    setup.input.pop();
+                }
+            }
+            KeyCode::Char(c) => {
+                if let Some(setup) = app.setup.as_mut() {
+                    setup.input.push(c);
+                }
+            }
+            _ => {}
+        },
+
+        Some(SetupStep::EditGoogleCalendarId) => match key {
+            KeyCode::Enter => {
+                let val = app.setup.as_ref().map(|s| s.input.clone()).unwrap_or_default();
+                let val = if val.trim().is_empty() { "primary".to_string() } else { val.trim().to_string() };
+                if let Some(idx) = app.setup.as_ref().and_then(|s| s.editing_idx) {
+                    if let Some(AccountConfig::Google(g)) = app.config.accounts.get_mut(idx) {
+                        g.calendar_id = val;
+                    }
+                }
+                let _ = app.config.save();
+                if let Some(setup) = app.setup.as_mut() {
+                    setup.input.clear();
+                    setup.step = SetupStep::EditAccount;
+                }
+            }
+            KeyCode::Esc => {
+                if let Some(setup) = app.setup.as_mut() {
+                    setup.input.clear();
+                    setup.step = SetupStep::EditAccount;
+                }
+            }
+            KeyCode::Backspace => {
+                if let Some(setup) = app.setup.as_mut() {
+                    setup.input.pop();
+                }
+            }
+            KeyCode::Char(c) => {
+                if let Some(setup) = app.setup.as_mut() {
+                    setup.input.push(c);
+                }
+            }
+            _ => {}
+        },
+
+        Some(SetupStep::ICloudMethod) => match key {
+            KeyCode::Char('1') | KeyCode::Enter => {
+                if let Some(idx) = app.setup.as_ref().and_then(|s| s.editing_idx) {
+                    if let Some(AccountConfig::ICloud(i)) = app.config.accounts.get_mut(idx) {
+                        i.method = "eventkit".to_string();
+                        i.apple_id = None;
+                        i.app_password = None;
+                    }
+                }
+                let _ = app.config.save();
+                if let Some(setup) = app.setup.as_mut() {
+                    setup.step = SetupStep::EditAccount;
+                }
+            }
+            KeyCode::Char('2') => {
+                if let Some(idx) = app.setup.as_ref().and_then(|s| s.editing_idx) {
+                    if let Some(AccountConfig::ICloud(i)) = app.config.accounts.get_mut(idx) {
+                        i.method = "caldav".to_string();
+                    }
+                }
+                let _ = app.config.save();
+                open_url("https://appleid.apple.com/account/manage");
+                if let Some(setup) = app.setup.as_mut() {
+                    setup.step = SetupStep::EditAccount;
+                }
+            }
+            KeyCode::Esc => {
+                if let Some(setup) = app.setup.as_mut() {
+                    setup.step = SetupStep::EditAccount;
+                }
+            }
+            _ => {}
+        },
+
+        Some(SetupStep::ICloudAppleId) => match key {
+            KeyCode::Enter => {
+                let val = app.setup.as_ref().map(|s| s.input.clone()).unwrap_or_default();
+                if val.trim().is_empty() {
+                    if let Some(setup) = app.setup.as_mut() {
+                        setup.error = Some("Apple ID cannot be empty".to_string());
+                    }
+                } else {
+                    if let Some(idx) = app.setup.as_ref().and_then(|s| s.editing_idx) {
+                        if let Some(AccountConfig::ICloud(i)) = app.config.accounts.get_mut(idx) {
+                            i.apple_id = Some(val.trim().to_string());
+                        }
+                    }
+                    let _ = app.config.save();
+                    if let Some(setup) = app.setup.as_mut() {
+                        setup.input.clear();
+                        setup.step = SetupStep::EditAccount;
+                    }
+                }
+            }
+            KeyCode::Esc => {
+                if let Some(setup) = app.setup.as_mut() {
+                    setup.input.clear();
+                    setup.step = SetupStep::EditAccount;
+                }
+            }
+            KeyCode::Backspace => {
+                if let Some(setup) = app.setup.as_mut() {
+                    setup.input.pop();
+                }
+            }
+            KeyCode::Char(c) => {
+                if let Some(setup) = app.setup.as_mut() {
+                    setup.input.push(c);
+                }
+            }
+            _ => {}
+        },
+
+        Some(SetupStep::ICloudAppPassword) => match key {
+            KeyCode::Enter => {
+                let val = app.setup.as_ref().map(|s| s.input.clone()).unwrap_or_default();
+                if val.trim().is_empty() {
+                    if let Some(setup) = app.setup.as_mut() {
+                        setup.error = Some("App password cannot be empty".to_string());
+                    }
+                } else {
+                    if let Some(idx) = app.setup.as_ref().and_then(|s| s.editing_idx) {
+                        if let Some(AccountConfig::ICloud(i)) = app.config.accounts.get_mut(idx) {
+                            i.app_password = Some(val.trim().to_string());
+                        }
+                    }
+                    let _ = app.config.save();
+                    if let Some(setup) = app.setup.as_mut() {
+                        setup.input.clear();
+                        setup.step = SetupStep::EditAccount;
+                    }
+                }
+            }
+            KeyCode::Esc => {
+                if let Some(setup) = app.setup.as_mut() {
+                    setup.input.clear();
+                    setup.step = SetupStep::EditAccount;
+                }
+            }
+            KeyCode::Backspace => {
+                if let Some(setup) = app.setup.as_mut() {
+                    setup.input.pop();
+                }
+            }
+            KeyCode::Char(c) => {
+                if let Some(setup) = app.setup.as_mut() {
+                    setup.input.push(c);
+                }
+            }
+            _ => {}
+        },
+
+        Some(SetupStep::PickCategory) => match key {
+            KeyCode::Char(c) if c.is_ascii_digit() => {
+                let idx = (c as u8 - b'1') as usize;
+                if idx < app.config.categories.len() {
+                    let cat_name = app.config.categories[idx].name.clone();
+                    if let Some(edit_idx) = app.setup.as_ref().and_then(|s| s.editing_idx) {
+                        if edit_idx < app.config.accounts.len() {
+                            match app.config.accounts.get_mut(edit_idx) {
+                                Some(AccountConfig::Google(g)) => g.category = Some(cat_name),
+                                Some(AccountConfig::ICloud(i)) => i.category = Some(cat_name),
+                                None => {}
+                            }
+                        }
+                    }
+                    let _ = app.config.save();
+                    if let Some(setup) = app.setup.as_mut() {
+                        setup.step = SetupStep::EditAccount;
+                    }
+                }
+            }
+            KeyCode::Esc => {
+                if let Some(setup) = app.setup.as_mut() {
+                    setup.step = SetupStep::EditAccount;
+                }
+            }
+            _ => {}
+        },
+
+        Some(SetupStep::AuthWaiting) => match key {
+            KeyCode::Esc => {
+                if let Some(setup) = app.setup.as_mut() {
+                    setup.step = SetupStep::EditAccount;
+                }
+            }
+            _ => {}
+        },
+
+        Some(SetupStep::DeleteConfirm) => match key {
+            KeyCode::Char('y') | KeyCode::Char('Y') | KeyCode::Enter => {
+                if let Some(idx) = app.setup.as_ref().and_then(|s| s.editing_idx) {
+                    if idx < app.config.accounts.len() {
+                        app.config.accounts.remove(idx);
+                        app.resize_accounts(app.config.accounts.len());
+                        let _ = app.config.save();
+                    }
+                }
+                if let Some(setup) = app.setup.as_mut() {
+                    setup.editing_idx = None;
+                    setup.editing_is_new = false;
+                    setup.step = SetupStep::AccountList;
+                }
+            }
+            KeyCode::Char('n') | KeyCode::Char('N') | KeyCode::Esc => {
+                if let Some(setup) = app.setup.as_mut() {
+                    setup.step = SetupStep::EditAccount;
+                }
+            }
+            _ => {}
+        },
+
+        Some(SetupStep::Done) => {}
+        None => {}
+    }
+
+    if app.setup.as_ref().map_or(false, |s| s.step == SetupStep::Done) {
         if let Err(e) = app.config.save() {
-            setup.error = Some(format!("Failed to save config: {}", e));
-            setup.step = SetupStep::GoogleAsk;
+            if let Some(setup) = app.setup.as_mut() {
+                setup.error = Some(format!("Failed to save config: {}", e));
+                setup.step = SetupStep::AccountList;
+            }
             return SetupAction::Continue;
         }
-
         app.resize_accounts(app.config.accounts.len());
         return SetupAction::Finished;
     }

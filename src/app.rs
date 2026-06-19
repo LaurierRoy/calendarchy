@@ -28,51 +28,38 @@ pub struct SearchResult {
 /// Interactive setup wizard step
 #[derive(Debug, Clone, PartialEq)]
 pub enum SetupStep {
-    ShortcutAsk,
-    ShortcutTerminalChoice, // macOS only — pick terminal emulator
-    Welcome,
-    GoogleAsk,
-    GoogleAuthWaiting,
-    ICloudAsk,
-    ICloudMethod,     // Choose EventKit vs CalDAV (macOS only)
-    ICloudOpenUrl,
+    AccountList,
+    EditAccount,
+    EditName,
+    EditGoogleCalendarId,
+    ICloudMethod,
     ICloudAppleId,
-    ICloudPassword,
+    ICloudAppPassword,
+    PickCategory,
+    AuthWaiting,
+    DeleteConfirm,
     Done,
-}
-
-/// Which iCloud method was chosen
-#[derive(Debug, Clone, PartialEq)]
-pub enum ICloudMethod {
-    EventKit,
-    CalDav,
 }
 
 /// State for the interactive setup wizard
 pub struct SetupState {
     pub step: SetupStep,
     pub input: String,
-    pub google_enabled: bool,
-    pub icloud_method: Option<ICloudMethod>,
-    pub icloud_apple_id: Option<String>,
-    pub icloud_password: Option<String>,
+    pub editing_idx: Option<usize>,
+    pub editing_is_new: bool,
     pub error: Option<String>,
     pub eventkit_available: bool,
-    pub available_terminals: Vec<String>,
 }
 
 impl SetupState {
     pub fn new() -> Self {
         Self {
-            step: SetupStep::Welcome,
+            step: SetupStep::AccountList,
             input: String::new(),
-            google_enabled: false,
-            icloud_method: None,
-            icloud_apple_id: None,
-            icloud_password: None,
+            editing_idx: None,
+            editing_is_new: false,
             error: None,
             eventkit_available: false,
-            available_terminals: Vec::new(),
         }
     }
 }

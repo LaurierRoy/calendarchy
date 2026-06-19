@@ -232,7 +232,13 @@ impl Config {
     pub fn load() -> Result<Config> {
         let path = Self::config_path();
         if !path.exists() {
-            return Ok(Config::default());
+            return Ok(Config {
+                categories: vec![
+                    Category { name: "Work".to_string(), accent: "blue".to_string() },
+                    Category { name: "Personal".to_string(), accent: "magenta".to_string() },
+                ],
+                ..Default::default()
+            });
         }
 
         let content = fs::read_to_string(&path)?;
