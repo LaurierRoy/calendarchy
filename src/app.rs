@@ -102,6 +102,8 @@ pub struct App {
     pub last_render_minute: u32,
     /// Interactive setup wizard state (None = not in setup mode)
     pub setup: Option<SetupState>,
+    /// Whether the help cheat sheet is visible
+    pub show_help: bool,
 }
 
 impl App {
@@ -128,6 +130,7 @@ impl App {
             dirty: true,
             last_render_minute: Local::now().minute(),
             setup: None,
+            show_help: false,
         };
 
         app.enter_event_mode();

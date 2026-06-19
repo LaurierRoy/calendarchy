@@ -444,6 +444,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 pending_action: app.pending_action.as_ref(),
                 search: app.search.as_ref(),
                 setup: app.setup.as_ref(),
+                show_help: app.show_help,
                 accounts: &app.config.accounts,
                 categories: &app.config.categories,
                 account_labels: &account_labels,
@@ -811,6 +812,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         continue;
                     }
 
+                    if app.show_help {
+                        app.show_help = false;
+                        continue;
+                    }
+
                     if let Some(action) = app.pending_action.take() {
                         match key_event.code {
                             KeyCode::Char('y') | KeyCode::Char('Y') | KeyCode::Enter => {
@@ -1009,6 +1015,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             (KeyCode::Char('S'), _) => {
                                 open_setup_wizard(&mut app);
                             }
+                            (KeyCode::Char('?'), _) => {
+                                app.show_help = !app.show_help;
+                            }
                             (KeyCode::Char('q') | KeyCode::Char('я'), _) => {
                                 break;
                             }
@@ -1062,6 +1071,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         }
                         (KeyCode::Char('S'), _) => {
                             open_setup_wizard(&mut app);
+                        }
+                        (KeyCode::Char('?'), _) => {
+                            app.show_help = !app.show_help;
                         }
                         (KeyCode::Char('i') | KeyCode::Char('и'), _) => {
                             let idx = app.selected_source;

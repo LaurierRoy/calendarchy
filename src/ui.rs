@@ -129,6 +129,8 @@ pub struct RenderState<'a> {
     pub search: Option<&'a SearchState>,
     // Setup wizard
     pub setup: Option<&'a SetupState>,
+    // Help cheat sheet visibility
+    pub show_help: bool,
     // Account configs for wizard rendering
     pub accounts: &'a [AccountConfig],
     pub categories: &'a [Category],
@@ -284,6 +286,11 @@ pub fn render(state: &RenderState) {
         }
     }
 
+    // Render help cheat sheet if active
+    if state.show_help {
+        render_help_modal(&mut out, term_width, term_height, state.navigation_mode);
+    }
+
     // Render status bar at bottom
     let status_row = term_height.saturating_sub(2);
     execute!(out, cursor::MoveTo(0, status_row)).unwrap();
@@ -318,10 +325,10 @@ pub fn render(state: &RenderState) {
         " y/Enter:confirm n/Esc:cancel".to_string()
     } else if state.navigation_mode == NavigationMode::Event {
         // Event navigation mode controls
-        " jk:nav ^d/^u:scroll f:find n:now t:today r:refresh Esc:back q:quit".to_string()
+        " jk:nav ^d/^u:scroll f:find n:now t:today r:refresh ?:help Esc:back q:quit".to_string()
     } else {
         // Day navigation mode controls
-        let mut c = format!(" jk:day ^d/^u:month f:find n:now t:today r:refresh Enter:events");
+        let mut c = format!(" jk:day ^d/^u:month f:find n:now t:today r:refresh ?:help Enter:events");
         for (i, auth) in state.account_auths.iter().enumerate() {
             if !auth.is_authenticated() {
                 let label = &state.account_labels[i];
@@ -1412,6 +1419,115 @@ fn render_setup_wizard(
             }
         }
     }
+}
+
+/// Render a centered help/cheat sheet modal
+fn render_help_modal(out: &mut impl Write, term_width: u16, term_height: u16, mode: NavigationMode) {
+    let modal_width = 60u16.min(term_width.saturating_sub(4));
+    let modal_height = (term_height * 3 / 4).max(16).min(term_height.saturating_sub(4));
+    let start_x = (term_width.saturating_sub(modal_width)) / 2;
+    let start_y = (term_height.saturating_sub(modal_height)) / 2;
+
+    execute!(out, SetForegroundColor(colors::HEADER)).unwrap();
+
+    // Top border with title
+    execute!(out, cursor::MoveTo(start_x, start_y)).unwrap();
+    print!("┌─ Keybindings ");
+    let remaining_top = modal_width.saturating_sub(15);
+    for _ in 0..remaining_top {
+        print!("─");
+    }
+    print!("┐");
+
+    // Empty rows
+    for row in 1..modal_height - 1 {
+        execute!(out, cursor::MoveTo(start_x, start_y + row)).unwrap();
+        print!("│");
+        let fill = (modal_width - 2) as usize;
+        for _ in 0..fill {
+            print!(" ");
+        }
+        print!("│");
+    }
+
+    // Bottom border
+    execute!(out, cursor::MoveTo(start_x, start_y + modal_height - 1)).unwrap();
+    print!("└");
+    for _ in 0..modal_width - 2 {
+        print!("─");
+    }
+    print!("┘");
+
+    execute!(out, ResetColor).unwrap();
+
+    let content_x = start_x + 3;
+    let content_y = start_y + 2;
+
+    // Build keybinding lines
+    let day_bindings = [
+        ("j/k ↑/↓", "Navigate days"),
+        ("Ctrl+d/u", "Next/previous month"),
+        ("Enter", "Enter event mode"),
+        ("t", "Go to today"),
+        ("n", "Go to now"),
+        ("r", "Refresh all events"),
+        ("f", "Open search"),
+        ("S", "Open setup wizard"),
+        ("D", "Toggle HTTP logs"),
+        ("?", "Toggle this help"),
+        ("q/Esc", "Quit"),
+    ];
+
+    let event_bindings = [
+        ("j/k ↑/↓", "Navigate events"),
+        ("Ctrl+d/u", "Scroll 10 events"),
+        ("J", "Open meeting URL"),
+        ("O", "Open event URL"),
+        ("a", "Accept event"),
+        ("d", "Decline event"),
+        ("x", "Delete event"),
+        ("t", "Go to today"),
+        ("n", "Go to now"),
+        ("r", "Refresh all events"),
+        ("f", "Open search"),
+        ("S", "Open setup wizard"),
+        ("D", "Toggle HTTP logs"),
+        ("?", "Toggle this help"),
+        ("Esc", "Back to day mode"),
+    ];
+
+    let title = match mode {
+        NavigationMode::Day => "Day Navigation",
+        NavigationMode::Event => "Event Navigation",
+    };
+
+    execute!(out, cursor::MoveTo(content_x, content_y)).unwrap();
+    execute!(out, SetForegroundColor(Color::White), SetAttribute(Attribute::Bold)).unwrap();
+    print!("{}", title);
+    execute!(out, ResetColor, SetAttribute(Attribute::Reset)).unwrap();
+
+    let bindings = match mode {
+        NavigationMode::Day => &day_bindings[..],
+        NavigationMode::Event => &event_bindings[..],
+    };
+
+    let max_key_width = 16usize;
+    for (i, (key, desc)) in bindings.iter().enumerate() {
+        let row = content_y + 2 + i as u16;
+        if row >= start_y + modal_height - 2 { break; }
+        execute!(out, cursor::MoveTo(content_x, row)).unwrap();
+        execute!(out, SetForegroundColor(Color::Green)).unwrap();
+        print!("{:width$}", key, width = max_key_width);
+        execute!(out, ResetColor).unwrap();
+        print!(" {}", desc);
+    }
+
+    // Bottom hint
+    let hint_y = start_y + modal_height - 2;
+    execute!(out, cursor::MoveTo(content_x, hint_y)).unwrap();
+    execute!(out, SetForegroundColor(Color::DarkGrey)).unwrap();
+    print!("Press any key to close");
+    execute!(out, ResetColor).unwrap();
 }
 
 /// Render a centered search modal
