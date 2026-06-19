@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TokenInfo {
     pub access_token: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub refresh_token: Option<String>,
     pub expires_at: DateTime<Utc>,
     pub token_type: String,

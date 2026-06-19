@@ -1,6 +1,7 @@
 use crate::error::Result;
 use crate::google::TokenInfo;
 use chrono::{DateTime, Utc};
+use keyring::Entry;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
@@ -389,17 +390,49 @@ impl Config {
     }
 }
 
-/// Save Google tokens for a specific account
+/// Check if the system keyring is available
+pub fn keyring_available() -> bool {
+    // Try creating a temporary entry — if keyring backends exist, this succeeds
+    Entry::new("calendarchy-test", "_probe").is_ok()
+}
+
+/// Try to save Google tokens to the system keyring (non-critical, may silently fail)
+fn save_google_tokens_keyring(account_id: &str, tokens: &TokenInfo) -> bool {
+    if let Ok(entry) = Entry::new("calendarchy-google", account_id) {
+        if let Ok(json) = serde_json::to_string(tokens) {
+            return entry.set_password(&json).is_ok();
+        }
+    }
+    false
+}
+
+/// Try to load Google tokens from the system keyring
+fn load_google_tokens_keyring(account_id: &str) -> Option<TokenInfo> {
+    let entry = Entry::new("calendarchy-google", account_id).ok()?;
+    let json = entry.get_password().ok()?;
+    serde_json::from_str(&json).ok()
+}
+
+/// Save Google tokens for a specific account.
+/// Primary storage: system keyring. Fallback/cache: tokens.json.
+/// Keeps refresh token in file only when keyring is unavailable.
 pub fn save_google_tokens(account_id: &str, tokens: &TokenInfo) -> Result<()> {
     Config::ensure_config_dir()?;
+
+    let has_keyring = save_google_tokens_keyring(account_id, tokens);
 
     let mut stored = load_all_tokens().unwrap_or(StoredTokens {
         google: HashMap::new(),
         icloud: HashMap::new(),
     });
 
+    let file_tokens = if has_keyring {
+        TokenInfo { refresh_token: None, ..tokens.clone() }
+    } else {
+        tokens.clone()
+    };
     stored.google.insert(account_id.to_string(), GoogleTokens {
-        tokens: tokens.clone(),
+        tokens: file_tokens,
         stored_at: Utc::now(),
     });
 
@@ -507,8 +540,14 @@ pub fn migrate_tokens(accounts: &[AccountConfig]) {
     }
 }
 
-/// Load Google tokens for a specific account
+/// Load Google tokens for a specific account.
+/// Primary source: system keyring. Fallback: tokens.json.
 pub fn load_google_tokens(account_id: &str) -> Result<Option<TokenInfo>> {
+    // Try keyring first (more secure)
+    if let Some(tokens) = load_google_tokens_keyring(account_id) {
+        return Ok(Some(tokens));
+    }
+    // Fall back to file-based storage
     let stored = load_all_tokens()?;
     Ok(stored.google.get(account_id).map(|g| g.tokens.clone()))
 }

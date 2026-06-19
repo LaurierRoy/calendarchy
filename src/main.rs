@@ -389,14 +389,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // Show helpful status if any accounts need auth
-    // Show helpful status if any accounts need auth
     let account_labels: Vec<String> = app.config.accounts.iter().map(|a| account_label(a)).collect();
     let unauth_indices: Vec<usize> = app.account_auths.iter().enumerate()
         .filter_map(|(i, a)| if !a.is_authenticated() { Some(i) } else { None })
         .collect();
+    let mut status_parts: Vec<String> = Vec::new();
     if !unauth_indices.is_empty() {
         let names: Vec<&str> = unauth_indices.iter().map(|&i| account_labels[i].as_str()).collect();
-        app.set_status(format!("Press 1-{} to sign in: {}", names.len(), names.join(", ")));
+        status_parts.push(format!("Press 1-{} to sign in: {}", names.len(), names.join(", ")));
+    }
+    if !config::keyring_available() && app.config.accounts.iter().any(|a| matches!(a, AccountConfig::Google(_))) {
+        status_parts.push("Warning: no system keyring — tokens stored on disk (less secure)".to_string());
+    }
+    if let Some(status) = status_parts.into_iter().reduce(|a, b| format!("{} | {}", a, b)) {
+        app.set_status(status);
     }
 
     enable_raw_mode()?;
