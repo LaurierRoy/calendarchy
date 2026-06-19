@@ -1,5 +1,5 @@
-use crate::app::{EventSource, MatchType, NavigationMode, PendingAction, SearchState, SetupState, SetupStep};
-use crate::auth::{AuthDisplay, GoogleAuthState, ICloudAuthState};
+use crate::app::{MatchType, NavigationMode, PendingAction, SearchState, SetupState, SetupStep};
+use crate::auth::AccountAuthState;
 use crate::cache::{AttendeeStatus, DisplayEvent, EventCache, EventId};
 use crate::logging::get_recent_logs;
 use chrono::{Datelike, Duration, Local, NaiveDate, NaiveTime, Timelike};
@@ -19,10 +19,6 @@ const MIN_PANEL_WIDTH: u16 = 25;
 // Semantic color constants
 mod colors {
     use crossterm::style::Color;
-
-    // Calendar sources
-    pub const GOOGLE_ACCENT: Color = Color::Blue;
-    pub const ICLOUD_ACCENT: Color = Color::Magenta;
 
     // Event states
     pub const CURRENT_EVENT: Color = Color::Green;
@@ -79,14 +75,12 @@ pub struct RenderState<'a> {
     pub selected_date: NaiveDate,
     pub show_logs: bool,
     pub events: &'a EventCache,
-    pub google_auth: &'a GoogleAuthState,
-    pub icloud_auth: &'a ICloudAuthState,
+    pub account_auths: &'a [AccountAuthState],
     pub status_message: Option<&'a str>,
-    pub google_loading: bool,
-    pub icloud_loading: bool,
+    pub loading: &'a [bool],
     // Two-level navigation state
     pub navigation_mode: NavigationMode,
-    pub selected_source: EventSource,
+    pub selected_source: usize,
     pub selected_event_index: usize,
     // Confirmation state
     pub pending_action: Option<&'a PendingAction>,
@@ -94,6 +88,9 @@ pub struct RenderState<'a> {
     pub search: Option<&'a SearchState>,
     // Setup wizard
     pub setup: Option<&'a SetupState>,
+    // Per-account display config
+    pub account_labels: &'a [String],
+    pub account_accents: &'a [Color],
 }
 
 /// Information about an upcoming event for the countdown display
@@ -106,9 +103,9 @@ pub struct NextEventInfo<'a> {
 /// Find the next upcoming event across all sources
 fn find_next_event<'a>(events: &'a EventCache, today: NaiveDate, current_time: NaiveTime) -> Option<NextEventInfo<'a>> {
     // Check today's events first
-    let all_today: Vec<&DisplayEvent> = events.google.get(today).iter()
-        .chain(events.icloud.get(today).iter())
-        .filter(|e| e.accepted) // Only show accepted events
+    let all_today: Vec<&DisplayEvent> = events.sources.iter()
+        .flat_map(|s| s.get(today))
+        .filter(|e| e.accepted)
         .collect();
 
     // Find current or next event today
@@ -142,8 +139,8 @@ fn find_next_event<'a>(events: &'a EventCache, today: NaiveDate, current_time: N
     // Check future days (up to 7 days ahead)
     for days_ahead in 1..=7 {
         let check_date = today + Duration::days(days_ahead);
-        let future_events: Vec<&DisplayEvent> = events.google.get(check_date).iter()
-            .chain(events.icloud.get(check_date).iter())
+        let future_events: Vec<&DisplayEvent> = events.sources.iter()
+            .flat_map(|s| s.get(check_date))
             .filter(|e| e.accepted && e.time_str != "All day")
             .collect();
 
@@ -212,7 +209,7 @@ pub fn render(state: &RenderState) {
 
     // When search modal is active, skip redrawing underlying content to avoid flicker
     if let Some(search) = state.search {
-        render_search_modal(&mut out, search, term_width, term_height);
+        render_search_modal(&mut out, search, term_width, term_height, state.account_accents);
     } else {
         // Clear and move to home position
         execute!(out, Clear(ClearType::All), cursor::MoveTo(0, 0)).unwrap();
@@ -280,12 +277,12 @@ pub fn render(state: &RenderState) {
         " jk:nav ^d/^u:scroll f:find n:now t:today r:refresh Esc:back q:quit".to_string()
     } else {
         // Day navigation mode controls
-        let mut c = String::from(" jk:day ^d/^u:month f:find n:now t:today r:refresh Enter:events");
-        if !state.google_auth.is_authenticated() {
-            c.push_str(" g:work");
-        }
-        if !state.icloud_auth.is_authenticated() {
-            c.push_str(" i:personal");
+        let mut c = format!(" jk:day ^d/^u:month f:find n:now t:today r:refresh Enter:events");
+        for (i, auth) in state.account_auths.iter().enumerate() {
+            if !auth.is_authenticated() {
+                let label = &state.account_labels[i];
+                c.push_str(&format!(" {}:{}", i + 1, label.to_lowercase()));
+            }
         }
         c.push_str(" q:quit");
         c
@@ -324,7 +321,7 @@ fn render_month_view(out: &mut impl Write, state: &RenderState, today: NaiveDate
     let header_rows = 2u16;
 
     // Render calendar on left
-    render_calendar(out, state.current_date, state.selected_date, today, state.events, state.google_loading || state.icloud_loading);
+    render_calendar(out, state.current_date, state.selected_date, today, state.events, state.loading.iter().any(|l| *l));
 
     // Render event panels in the middle
     if events_panel_width >= MIN_PANEL_WIDTH {
@@ -339,60 +336,41 @@ fn render_month_view(out: &mut impl Write, state: &RenderState, today: NaiveDate
         // Separator line
         draw_separator(out, events_x, 1, events_panel_width);
 
-        let google_events = state.events.google.get(state.selected_date);
-        let icloud_events = state.events.icloud.get(state.selected_date);
+        let source_events: Vec<&[DisplayEvent]> = state.events.sources.iter()
+            .map(|s| s.get(state.selected_date))
+            .collect();
         let is_past_day = state.selected_date < today;
-        let (google_overlaps, icloud_overlaps) = compute_overlapping_events(google_events, icloud_events);
+        let overlaps = compute_overlapping_events(&source_events);
 
-        // Selection info for highlighting
-        let google_selected = if in_event_mode && state.selected_source == EventSource::Google {
-            Some(state.selected_event_index)
-        } else {
-            None
-        };
-        let icloud_selected = if in_event_mode && state.selected_source == EventSource::ICloud {
-            Some(state.selected_event_index)
-        } else {
-            None
-        };
+        // Render each account panel
+        let mut panel_y = header_rows;
+        for (i, events) in source_events.iter().enumerate() {
+            let selected = if in_event_mode && state.selected_source == i {
+                Some(state.selected_event_index)
+            } else {
+                None
+            };
 
-        // Render Work (Google) panel
-        render_event_panel(
-            out,
-            events_x,
-            header_rows,
-            events_panel_width,
-            "Work",
-            google_events,
-            state.google_loading,
-            colors::GOOGLE_ACCENT,
-            is_today,
-            is_past_day,
-            current_time,
-            google_selected,
-            &google_overlaps,
-        );
+            let label = &state.account_labels[i];
 
-        // Calculate Personal panel position: after Work header (1) + events + spacing (1)
-        let work_panel_rows = 1 + google_events.len().max(1) as u16;
-        let personal_y = header_rows + work_panel_rows + 1;
+            render_event_panel(
+                out,
+                events_x,
+                panel_y,
+                events_panel_width,
+                label,
+                events,
+                state.loading[i],
+                state.account_accents[i],
+                is_today,
+                is_past_day,
+                current_time,
+                selected,
+                &overlaps[i],
+            );
 
-        // Render Personal (iCloud) panel below
-        render_event_panel(
-            out,
-            events_x,
-            personal_y,
-            events_panel_width,
-            "Personal",
-            icloud_events,
-            state.icloud_loading,
-            colors::ICLOUD_ACCENT,
-            is_today,
-            is_past_day,
-            current_time,
-            icloud_selected,
-            &icloud_overlaps,
-        );
+            panel_y = panel_y + 1 + events.len().max(1) as u16;
+        }
     }
 
     // Render details panel on the right when in Event mode
@@ -400,12 +378,10 @@ fn render_month_view(out: &mut impl Write, state: &RenderState, today: NaiveDate
         let details_x = cal_width + events_panel_width + 2;
         let details_height = term_height.saturating_sub(3);
 
-
         // Get the selected event
-        let selected_event = match state.selected_source {
-            EventSource::Google => state.events.google.get(state.selected_date).get(state.selected_event_index),
-            EventSource::ICloud => state.events.icloud.get(state.selected_date).get(state.selected_event_index),
-        };
+        let selected_event = state.events.sources
+            .get(state.selected_source)
+            .and_then(|s| s.get(state.selected_date).get(state.selected_event_index));
 
         render_event_details_column(out, details_x, 0, details_panel_width, details_height, selected_event);
     }
@@ -531,62 +507,56 @@ fn parse_event_range(event: &DisplayEvent) -> Option<(u32, u32)> {
     Some((event_start, event_end))
 }
 
-/// Detect overlapping events across two source panels.
-/// Returns sets of indices into google_events and icloud_events that overlap with any other event.
+/// Detect overlapping events across N source panels.
+/// Returns a vector of overlap sets, one per source.
 fn compute_overlapping_events(
-    google_events: &[DisplayEvent],
-    icloud_events: &[DisplayEvent],
-) -> (HashSet<usize>, HashSet<usize>) {
-    let mut google_overlaps = HashSet::new();
-    let mut icloud_overlaps = HashSet::new();
+    source_events: &[&[DisplayEvent]],
+) -> Vec<HashSet<usize>> {
+    let num_sources = source_events.len();
+    let mut result: Vec<HashSet<usize>> = (0..num_sources).map(|_| HashSet::new()).collect();
 
-    // Parse ranges once
-    let google_ranges: Vec<Option<(u32, u32)>> = google_events.iter().map(parse_event_range).collect();
-    let icloud_ranges: Vec<Option<(u32, u32)>> = icloud_events.iter().map(parse_event_range).collect();
+    // Parse ranges for each source
+    let ranges: Vec<Vec<Option<(u32, u32)>>> = source_events.iter()
+        .map(|events| events.iter().map(parse_event_range).collect())
+        .collect();
 
-    // Check within Google events
-    for i in 0..google_ranges.len() {
-        for j in (i + 1)..google_ranges.len() {
-            if let (Some((s_a, e_a)), Some((s_b, e_b))) = (google_ranges[i], google_ranges[j]) {
-                if s_a < e_b && s_b < e_a {
-                    google_overlaps.insert(i);
-                    google_overlaps.insert(j);
-                }
-            }
-        }
-    }
-
-    // Check within iCloud events
-    for i in 0..icloud_ranges.len() {
-        for j in (i + 1)..icloud_ranges.len() {
-            if let (Some((s_a, e_a)), Some((s_b, e_b))) = (icloud_ranges[i], icloud_ranges[j]) {
-                if s_a < e_b && s_b < e_a {
-                    icloud_overlaps.insert(i);
-                    icloud_overlaps.insert(j);
+    // Check within each source
+    for si in 0..num_sources {
+        for i in 0..ranges[si].len() {
+            for j in (i + 1)..ranges[si].len() {
+                if let (Some((s_a, e_a)), Some((s_b, e_b))) = (ranges[si][i], ranges[si][j]) {
+                    if s_a < e_b && s_b < e_a {
+                        result[si].insert(i);
+                        result[si].insert(j);
+                    }
                 }
             }
         }
     }
 
     // Check cross-source overlaps
-    for (gi, g_range) in google_ranges.iter().enumerate() {
-        for (ii, i_range) in icloud_ranges.iter().enumerate() {
-            if let (Some((s_a, e_a)), Some((s_b, e_b))) = (g_range, i_range) {
-                if s_a < e_b && s_b < e_a {
-                    google_overlaps.insert(gi);
-                    icloud_overlaps.insert(ii);
+    for si in 0..num_sources {
+        for sj in (si + 1)..num_sources {
+            for (i, r_i) in ranges[si].iter().enumerate() {
+                for (j, r_j) in ranges[sj].iter().enumerate() {
+                    if let (Some((s_a, e_a)), Some((s_b, e_b))) = (r_i, r_j) {
+                        if s_a < e_b && s_b < e_a {
+                            result[si].insert(i);
+                            result[sj].insert(j);
+                        }
+                    }
                 }
             }
         }
     }
 
-    (google_overlaps, icloud_overlaps)
+    result
 }
 
-/// Count how many time-blocking events cover a given slot (across both sources).
-fn count_slot_events(google_events: &[DisplayEvent], icloud_events: &[DisplayEvent], slot_start: u32, slot_end: u32) -> usize {
-    google_events.iter().chain(icloud_events.iter())
-        .filter_map(parse_event_range)
+/// Count how many time-blocking events cover a given slot (across all sources).
+fn count_slot_events(events: &[&DisplayEvent], slot_start: u32, slot_end: u32) -> usize {
+    events.iter()
+        .filter_map(|e| parse_event_range(e))
         .filter(|(es, ee)| slot_start < *ee && slot_end > *es)
         .count()
 }
@@ -635,9 +605,10 @@ fn render_week_availability(
         for day_offset in 0..num_days as i64 {
             let date = monday + Duration::days(day_offset);
 
-            // Get events for this date from both sources
-            let google_events = events.google.get(date);
-            let icloud_events = events.icloud.get(date);
+            // Get events for this date from all sources
+            let day_events: Vec<&DisplayEvent> = events.sources.iter()
+                .flat_map(|s| s.get(date))
+                .collect();
 
             // Check 30-minute slots
             let slot1_start = hour * 60;       // :00
@@ -645,8 +616,8 @@ fn render_week_availability(
             let slot2_start = hour * 60 + 30;  // :30
             let slot2_end = (hour + 1) * 60;   // :00 next hour
 
-            let first_half_count = count_slot_events(google_events, icloud_events, slot1_start, slot1_end);
-            let second_half_count = count_slot_events(google_events, icloud_events, slot2_start, slot2_end);
+            let first_half_count = count_slot_events(&day_events, slot1_start, slot1_end);
+            let second_half_count = count_slot_events(&day_events, slot2_start, slot2_end);
 
             let first_half_busy = first_half_count > 0;
             let second_half_busy = second_half_count > 0;
@@ -887,15 +858,27 @@ fn render_event_details_column(
         execute!(out, cursor::MoveTo(content_x, current_row)).unwrap();
         execute!(out, SetForegroundColor(Color::DarkGrey)).unwrap();
         match &event.id {
-            EventId::Google { calendar_name, .. } => {
-                if let Some(name) = calendar_name {
+            EventId::Google { account_label, calendar_name, .. } => {
+                if let Some(label) = account_label {
+                    if let Some(name) = calendar_name {
+                        print!("{} - {}", label, name);
+                    } else {
+                        print!("{}", label);
+                    }
+                } else if let Some(name) = calendar_name {
                     print!("Google - {}", name);
                 } else {
                     print!("Google");
                 }
             }
-            EventId::ICloud { calendar_name, .. } => {
-                if let Some(name) = calendar_name {
+            EventId::ICloud { account_label, calendar_name, .. } => {
+                if let Some(label) = account_label {
+                    if let Some(name) = calendar_name {
+                        print!("{} - {}", label, name);
+                    } else {
+                        print!("{}", label);
+                    }
+                } else if let Some(name) = calendar_name {
                     print!("iCloud - {}", name);
                 } else {
                     print!("iCloud");
@@ -1257,8 +1240,7 @@ fn render_setup_wizard(out: &mut impl Write, setup: &SetupState, term_width: u16
 }
 
 /// Render a centered search modal
-fn render_search_modal(out: &mut impl Write, search: &SearchState, term_width: u16, term_height: u16) {
-    use crate::app::EventSource;
+fn render_search_modal(out: &mut impl Write, search: &SearchState, term_width: u16, term_height: u16, account_accents: &[Color]) {
     use crate::cache::EventId;
 
     let modal_width = 60u16.min(term_width.saturating_sub(4));
@@ -1401,10 +1383,7 @@ fn render_search_modal(out: &mut impl Write, search: &SearchState, term_width: u
                 print!("{:>11} ", when);
 
                 // Source color indicator
-                let source_color = match result.source {
-                    EventSource::Google => colors::GOOGLE_ACCENT,
-                    EventSource::ICloud => colors::ICLOUD_ACCENT,
-                };
+                let source_color = account_accents.get(result.source_idx).copied().unwrap_or(Color::White);
                 execute!(out, SetForegroundColor(source_color)).unwrap();
                 let source_char = match result.event.id {
                     EventId::Google { .. } => "G",
@@ -1525,7 +1504,7 @@ mod tests {
 
     fn make_event(time: &str) -> DisplayEvent {
         DisplayEvent {
-            id: EventId::Google { calendar_id: "test".to_string(), event_id: "test-id".to_string(), calendar_name: None },
+            id: EventId::Google { calendar_id: "test".to_string(), event_id: "test-id".to_string(), calendar_name: None, account_label: None },
             title: "Test".to_string(),
             time_str: time.to_string(),
             end_time_str: None,
@@ -1702,7 +1681,7 @@ mod tests {
 
     fn make_icloud_event(time: &str) -> DisplayEvent {
         DisplayEvent {
-            id: EventId::ICloud { calendar_url: "test".to_string(), event_uid: "test-uid".to_string(), etag: None, calendar_name: None },
+            id: EventId::ICloud { calendar_url: "test".to_string(), event_uid: "test-uid".to_string(), etag: None, calendar_name: None, account_label: None },
             title: "iCloud Test".to_string(),
             time_str: time.to_string(),
             end_time_str: None,
@@ -1725,27 +1704,30 @@ mod tests {
 
     #[test]
     fn test_overlap_no_events() {
-        let (g, i) = compute_overlapping_events(&[], &[]);
-        assert!(g.is_empty());
-        assert!(i.is_empty());
+        let sources: [&[DisplayEvent]; 2] = [&[], &[]];
+        let overlaps = compute_overlapping_events(&sources);
+        assert!(overlaps[0].is_empty());
+        assert!(overlaps[1].is_empty());
     }
 
     #[test]
     fn test_overlap_non_overlapping() {
         let google = vec![make_event_with_end("09:00", "10:00")];
         let icloud = vec![make_icloud_event_with_end("10:00", "11:00")];
-        let (g, i) = compute_overlapping_events(&google, &icloud);
-        assert!(g.is_empty());
-        assert!(i.is_empty());
+        let sources = [google.as_slice(), icloud.as_slice()];
+        let overlaps = compute_overlapping_events(&sources);
+        assert!(overlaps[0].is_empty());
+        assert!(overlaps[1].is_empty());
     }
 
     #[test]
     fn test_overlap_cross_source() {
         let google = vec![make_event_with_end("09:00", "10:00")];
         let icloud = vec![make_icloud_event_with_end("09:30", "10:30")];
-        let (g, i) = compute_overlapping_events(&google, &icloud);
-        assert!(g.contains(&0));
-        assert!(i.contains(&0));
+        let sources = [google.as_slice(), icloud.as_slice()];
+        let overlaps = compute_overlapping_events(&sources);
+        assert!(overlaps[0].contains(&0));
+        assert!(overlaps[1].contains(&0));
     }
 
     #[test]
@@ -1754,10 +1736,11 @@ mod tests {
             make_event_with_end("09:00", "10:00"),
             make_event_with_end("09:30", "10:30"),
         ];
-        let (g, i) = compute_overlapping_events(&google, &[]);
-        assert!(g.contains(&0));
-        assert!(g.contains(&1));
-        assert!(i.is_empty());
+        let sources = [google.as_slice(), &[] as &[DisplayEvent]];
+        let overlaps = compute_overlapping_events(&sources);
+        assert!(overlaps[0].contains(&0));
+        assert!(overlaps[0].contains(&1));
+        assert!(overlaps[1].is_empty());
     }
 
     #[test]
@@ -1765,18 +1748,20 @@ mod tests {
         // end == start → strict inequality means no overlap
         let google = vec![make_event_with_end("09:00", "10:00")];
         let icloud = vec![make_icloud_event_with_end("10:00", "11:00")];
-        let (g, i) = compute_overlapping_events(&google, &icloud);
-        assert!(g.is_empty());
-        assert!(i.is_empty());
+        let sources = [google.as_slice(), icloud.as_slice()];
+        let overlaps = compute_overlapping_events(&sources);
+        assert!(overlaps[0].is_empty());
+        assert!(overlaps[1].is_empty());
     }
 
     #[test]
     fn test_overlap_skips_all_day() {
         let google = vec![make_event("All day")];
         let icloud = vec![make_icloud_event_with_end("09:00", "10:00")];
-        let (g, i) = compute_overlapping_events(&google, &icloud);
-        assert!(g.is_empty());
-        assert!(i.is_empty());
+        let sources = [google.as_slice(), icloud.as_slice()];
+        let overlaps = compute_overlapping_events(&sources);
+        assert!(overlaps[0].is_empty());
+        assert!(overlaps[1].is_empty());
     }
 
     #[test]
@@ -1784,9 +1769,10 @@ mod tests {
         let mut google = vec![make_event_with_end("09:00", "10:00")];
         google[0].is_free = true;
         let icloud = vec![make_icloud_event_with_end("09:00", "10:00")];
-        let (g, i) = compute_overlapping_events(&google, &icloud);
-        assert!(g.is_empty());
-        assert!(i.is_empty());
+        let sources = [google.as_slice(), icloud.as_slice()];
+        let overlaps = compute_overlapping_events(&sources);
+        assert!(overlaps[0].is_empty());
+        assert!(overlaps[1].is_empty());
     }
 
     #[test]
@@ -1794,9 +1780,10 @@ mod tests {
         let mut google = vec![make_event_with_end("09:00", "10:00")];
         google[0].accepted = false;
         let icloud = vec![make_icloud_event_with_end("09:00", "10:00")];
-        let (g, i) = compute_overlapping_events(&google, &icloud);
-        assert!(g.is_empty());
-        assert!(i.is_empty());
+        let sources = [google.as_slice(), icloud.as_slice()];
+        let overlaps = compute_overlapping_events(&sources);
+        assert!(overlaps[0].is_empty());
+        assert!(overlaps[1].is_empty());
     }
 
     #[test]
@@ -1804,8 +1791,9 @@ mod tests {
         // No end time → defaults to start + 60 min
         let google = vec![make_event("09:00")]; // 09:00-10:00
         let icloud = vec![make_icloud_event("09:30")]; // 09:30-10:30
-        let (g, i) = compute_overlapping_events(&google, &icloud);
-        assert!(g.contains(&0));
-        assert!(i.contains(&0));
+        let sources = [google.as_slice(), icloud.as_slice()];
+        let overlaps = compute_overlapping_events(&sources);
+        assert!(overlaps[0].contains(&0));
+        assert!(overlaps[1].contains(&0));
     }
 }

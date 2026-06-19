@@ -8,6 +8,7 @@ pub fn google_event_to_display(
     event: google::types::CalendarEvent,
     calendar_id: String,
     calendar_name: Option<String>,
+    account_label: Option<String>,
 ) -> Option<DisplayEvent> {
     let mut attendees: Vec<DisplayAttendee> = event.attendees.as_ref().map(|atts| {
         atts.iter()
@@ -38,6 +39,7 @@ pub fn google_event_to_display(
             calendar_id,
             event_id: event.id.clone(),
             calendar_name,
+            account_label,
         },
         title: event.title().to_string(),
         time_str: event.time_str(),
@@ -54,7 +56,7 @@ pub fn google_event_to_display(
 }
 
 /// Convert an iCloud ICalEvent to a DisplayEvent
-pub fn icloud_event_to_display(event: ICalEvent, calendar_name: Option<String>) -> DisplayEvent {
+pub fn icloud_event_to_display(event: ICalEvent, calendar_name: Option<String>, account_label: Option<String>) -> DisplayEvent {
     let mut attendees: Vec<DisplayAttendee> = event.attendees.iter()
         .map(|a| {
             let status = if a.is_organizer {
@@ -85,6 +87,7 @@ pub fn icloud_event_to_display(event: ICalEvent, calendar_name: Option<String>) 
             event_uid: event.uid.clone(),
             etag: event.etag.clone(),
             calendar_name,
+            account_label,
         },
         title: event.title().to_string(),
         time_str: event.time_str(),
@@ -133,7 +136,7 @@ mod tests {
     #[test]
     fn test_google_event_to_display_basic() {
         let event = make_google_event("event-123", "Team Meeting", NaiveDate::from_ymd_opt(2026, 1, 15).unwrap());
-        let result = google_event_to_display(event, "cal-id".to_string(), Some("Work".to_string()));
+        let result = google_event_to_display(event, "cal-id".to_string(), Some("Work".to_string()), Some("Work".to_string()));
 
         assert!(result.is_some());
         let display = result.unwrap();
@@ -162,7 +165,7 @@ mod tests {
             },
         ]);
 
-        let result = google_event_to_display(event, "cal-id".to_string(), None);
+        let result = google_event_to_display(event, "cal-id".to_string(), None, None);
         assert!(result.is_some());
         let display = result.unwrap();
 
@@ -189,7 +192,7 @@ mod tests {
             etag: Some("etag-abc".to_string()),
         };
 
-        let display = icloud_event_to_display(event, Some("Personal".to_string()));
+        let display = icloud_event_to_display(event, Some("Personal".to_string()), None);
 
         assert_eq!(display.title, "Personal Event");
         assert_eq!(display.date, NaiveDate::from_ymd_opt(2026, 1, 20).unwrap());
@@ -221,7 +224,7 @@ mod tests {
             etag: None,
         };
 
-        let display = icloud_event_to_display(event, None);
+        let display = icloud_event_to_display(event, None, None);
 
         assert!(!display.is_organizer); // Has attendees, not organizer
         assert_eq!(display.attendees.len(), 1);

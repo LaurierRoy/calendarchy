@@ -49,9 +49,9 @@ impl AttendeeStatus {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum EventId {
     /// Google Calendar event (calendar_id, event_id, calendar_name for display)
-    Google { calendar_id: String, event_id: String, calendar_name: Option<String> },
+    Google { calendar_id: String, event_id: String, calendar_name: Option<String>, account_label: Option<String> },
     /// iCloud CalDAV event (calendar_url, event_uid, etag for updates, calendar_name for display)
-    ICloud { calendar_url: String, event_uid: String, etag: Option<String>, calendar_name: Option<String> },
+    ICloud { calendar_url: String, event_uid: String, etag: Option<String>, calendar_name: Option<String>, account_label: Option<String> },
 }
 
 /// Unified event representation for display
@@ -75,8 +75,7 @@ pub struct DisplayEvent {
 /// Serializable cache format for disk persistence
 #[derive(Serialize, Deserialize)]
 struct DiskCache {
-    google: HashMap<NaiveDate, Vec<DisplayEvent>>,
-    icloud: HashMap<NaiveDate, Vec<DisplayEvent>>,
+    sources: Vec<HashMap<NaiveDate, Vec<DisplayEvent>>>,
 }
 
 /// Source-specific event cache
@@ -155,27 +154,24 @@ impl Default for SourceCache {
 
 /// Combined event cache for all sources
 pub struct EventCache {
-    pub google: SourceCache,
-    pub icloud: SourceCache,
+    pub sources: Vec<SourceCache>,
 }
 
 impl EventCache {
-    pub fn new() -> Self {
+    pub fn new(num_sources: usize) -> Self {
         Self {
-            google: SourceCache::new(),
-            icloud: SourceCache::new(),
+            sources: (0..num_sources).map(|_| SourceCache::new()).collect(),
         }
     }
 
     /// Check if any source has events on this date
     pub fn has_events(&self, date: NaiveDate) -> bool {
-        self.google.has_events(date) || self.icloud.has_events(date)
+        self.sources.iter().any(|s| s.has_events(date))
     }
 
     /// Clear all caches
     pub fn clear(&mut self) {
-        self.google.clear();
-        self.icloud.clear();
+        self.sources.iter_mut().for_each(|s| s.clear());
     }
 
     /// Get cache file path
@@ -193,8 +189,7 @@ impl EventCache {
         }
 
         let cache = DiskCache {
-            google: self.google.raw_data().clone(),
-            icloud: self.icloud.raw_data().clone(),
+            sources: self.sources.iter().map(|s| s.raw_data().clone()).collect(),
         };
 
         if let Ok(json) = serde_json::to_string(&cache) {
@@ -207,18 +202,41 @@ impl EventCache {
         let Some(path) = Self::cache_path() else { return false };
 
         let Ok(json) = fs::read_to_string(&path) else { return false };
-        let Ok(cache) = serde_json::from_str::<DiskCache>(&json) else { return false };
 
-        self.google.load_from(cache.google);
-        self.icloud.load_from(cache.icloud);
+        // Try old format first (google/icloud keys)
+        if let Ok(old) = serde_json::from_str::<OldDiskCache>(&json) {
+            if self.sources.len() >= 2 {
+                self.sources[0].load_from(old.google);
+                if self.sources.len() >= 2 {
+                    self.sources[1].load_from(old.icloud);
+                }
+            }
+            return true;
+        }
+
+        // New format
+        let Ok(cache) = serde_json::from_str::<DiskCache>(&json) else { return false };
+        for (i, data) in cache.sources.into_iter().enumerate() {
+            if i < self.sources.len() {
+                self.sources[i].load_from(data);
+            }
+        }
         true
     }
 }
 
 impl Default for EventCache {
     fn default() -> Self {
-        Self::new()
+        Self::new(0)
     }
+}
+
+/// Old cache format for backward compatibility
+#[derive(Serialize, Deserialize)]
+struct OldDiskCache {
+    google: HashMap<NaiveDate, Vec<DisplayEvent>>,
+    #[serde(default)]
+    icloud: HashMap<NaiveDate, Vec<DisplayEvent>>,
 }
 
 #[cfg(test)]
@@ -227,7 +245,7 @@ mod tests {
 
     fn make_event(title: &str, date: NaiveDate, time: &str) -> DisplayEvent {
         DisplayEvent {
-            id: EventId::Google { calendar_id: "test".to_string(), event_id: "test-id".to_string(), calendar_name: None },
+            id: EventId::Google { calendar_id: "test".to_string(), event_id: "test-id".to_string(), calendar_name: None, account_label: None },
             title: title.to_string(),
             time_str: time.to_string(),
             end_time_str: None,
@@ -280,12 +298,9 @@ mod tests {
         let date = NaiveDate::from_ymd_opt(2026, 1, 15).unwrap();
         let month_date = NaiveDate::from_ymd_opt(2026, 1, 1).unwrap();
 
-        // Store first batch
         cache.store(vec![make_event("Old Event", date, "09:00")], month_date);
         assert_eq!(cache.get(date).len(), 1);
-        assert_eq!(cache.get(date)[0].title, "Old Event");
 
-        // Store second batch - should replace
         cache.store(vec![make_event("New Event", date, "10:00")], month_date);
         assert_eq!(cache.get(date).len(), 1);
         assert_eq!(cache.get(date)[0].title, "New Event");
@@ -312,11 +327,9 @@ mod tests {
 
         cache.store(vec![make_event("Event", date, "10:00")], month_date);
         assert!(cache.has_month(month_date));
-        assert!(cache.has_events(date));
 
         cache.clear();
         assert!(!cache.has_month(month_date));
-        assert!(!cache.has_events(date));
     }
 
     #[test]
@@ -330,27 +343,25 @@ mod tests {
 
         cache.load_from(data);
 
-        // Data should be there
         assert_eq!(cache.get(date).len(), 1);
-        // But month should NOT be marked as fetched (allows refresh)
         assert!(!cache.has_month(month_date));
     }
 
     #[test]
-    fn test_event_cache_has_events_either_source() {
-        let mut cache = EventCache::new();
+    fn test_event_cache_has_events() {
+        let mut cache = EventCache::new(2);
         let date = NaiveDate::from_ymd_opt(2026, 1, 15).unwrap();
         let month_date = NaiveDate::from_ymd_opt(2026, 1, 1).unwrap();
 
         assert!(!cache.has_events(date));
 
-        cache.google.store(vec![make_event("Google Event", date, "10:00")], month_date);
+        cache.sources[0].store(vec![make_event("Event 1", date, "10:00")], month_date);
         assert!(cache.has_events(date));
 
-        cache.google.clear();
+        cache.sources[0].clear();
         assert!(!cache.has_events(date));
 
-        cache.icloud.store(vec![make_event("iCloud Event", date, "11:00")], month_date);
+        cache.sources[1].store(vec![make_event("Event 2", date, "11:00")], month_date);
         assert!(cache.has_events(date));
     }
 

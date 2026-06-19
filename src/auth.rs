@@ -44,3 +44,21 @@ impl AuthDisplay for ICloudAuthState {
         matches!(self, ICloudAuthState::Authenticated { .. })
     }
 }
+
+/// Unified per-account auth state for any provider type
+#[derive(Debug, Clone)]
+pub enum AccountAuthState {
+    NotConfigured,
+    Google(GoogleAuthState),
+    ICloud(ICloudAuthState),
+}
+
+impl AccountAuthState {
+    pub fn is_authenticated(&self) -> bool {
+        match self {
+            Self::Google(g) => g.is_authenticated(),
+            Self::ICloud(i) => i.is_authenticated(),
+            Self::NotConfigured => false,
+        }
+    }
+}

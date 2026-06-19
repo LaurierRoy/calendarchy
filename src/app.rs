@@ -1,5 +1,5 @@
-use crate::auth::{GoogleAuthState, ICloudAuthState};
-use crate::cache::{DisplayEvent, EventCache};
+use crate::auth::AccountAuthState;
+use crate::cache::{DisplayEvent, EventCache, SourceCache};
 use crate::config::Config;
 use chrono::{Datelike, Duration, Local, NaiveDate, NaiveTime, Timelike};
 
@@ -18,10 +18,10 @@ pub enum MatchType {
     Participant,
 }
 
-/// A single search result with its source
+/// A single search result with its source index
 pub struct SearchResult {
     pub event: DisplayEvent,
-    pub source: EventSource,
+    pub source_idx: usize,  // Index into config.accounts / events.sources
     pub match_type: MatchType,
 }
 
@@ -84,20 +84,13 @@ pub enum NavigationMode {
     Event, // Navigate between events within selected day with j/k
 }
 
-/// Which event source/panel is currently selected
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum EventSource {
-    Google,
-    ICloud,
-}
-
 /// Pending action awaiting confirmation
 #[derive(Debug, Clone)]
 pub enum PendingAction {
-    AcceptEvent { calendar_id: String, event_id: String },
-    DeclineEvent { calendar_id: String, event_id: String },
-    DeleteGoogleEvent { calendar_id: String, event_id: String },
-    DeleteICloudEvent { calendar_url: String, event_uid: String, etag: Option<String> },
+    AcceptEvent { account_idx: usize, calendar_id: String, event_id: String },
+    DeclineEvent { account_idx: usize, calendar_id: String, event_id: String },
+    DeleteGoogleEvent { account_idx: usize, calendar_id: String, event_id: String },
+    DeleteICloudEvent { account_idx: usize, calendar_url: String, event_uid: String, etag: Option<String> },
 }
 
 /// Application state
@@ -106,17 +99,14 @@ pub struct App {
     pub selected_date: NaiveDate,
     pub show_logs: bool,
     pub events: EventCache,
-    pub google_auth: GoogleAuthState,
-    pub icloud_auth: ICloudAuthState,
+    pub account_auths: Vec<AccountAuthState>,
+    pub needs_fetch: Vec<bool>,
+    pub loading: Vec<bool>,
     pub status_message: Option<String>,
     pub status_message_time: Option<std::time::Instant>,
     pub config: Config,
-    pub google_needs_fetch: bool,
-    pub icloud_needs_fetch: bool,
-    pub google_loading: bool,
-    pub icloud_loading: bool,
     pub navigation_mode: NavigationMode,
-    pub selected_source: EventSource,
+    pub selected_source: usize,
     pub selected_event_index: usize,
     pub pending_action: Option<PendingAction>,
     pub search: Option<SearchState>,
@@ -130,25 +120,21 @@ pub struct App {
 impl App {
     pub fn new() -> Self {
         let today = Local::now().date_naive();
-        let mut events = EventCache::new();
-        events.load_from_disk();
+        let events = EventCache::new(0);
 
         let mut app = Self {
             current_date: today,
             selected_date: today,
             show_logs: false,
             events,
-            google_auth: GoogleAuthState::NotConfigured,
-            icloud_auth: ICloudAuthState::NotConfigured,
+            account_auths: Vec::new(),
+            needs_fetch: Vec::new(),
+            loading: Vec::new(),
             status_message: None,
             status_message_time: None,
             config: Config::default(),
-            google_needs_fetch: false,
-            icloud_needs_fetch: false,
-            google_loading: false,
-            icloud_loading: false,
             navigation_mode: NavigationMode::Day,
-            selected_source: EventSource::Google,
+            selected_source: 0,
             selected_event_index: 0,
             pending_action: None,
             search: None,
@@ -159,6 +145,17 @@ impl App {
 
         app.enter_event_mode();
         app
+    }
+
+    pub fn resize_accounts(&mut self, num: usize) {
+        self.account_auths.resize(num, AccountAuthState::NotConfigured);
+        self.needs_fetch.resize(num, false);
+        self.loading.resize(num, false);
+        while self.events.sources.len() < num {
+            self.events.sources.push(SourceCache::new());
+        }
+        self.events.sources.truncate(num);
+        self.selected_source = self.selected_source.min(num.saturating_sub(1));
     }
 
     pub fn set_status(&mut self, msg: impl Into<String>) {
@@ -192,8 +189,9 @@ impl App {
             || self.selected_date.year() != self.current_date.year()
         {
             self.current_date = self.selected_date.with_day(1).unwrap();
-            self.google_needs_fetch = true;
-            self.icloud_needs_fetch = true;
+            for nf in &mut self.needs_fetch {
+                *nf = true;
+            }
         }
     }
 
@@ -204,8 +202,9 @@ impl App {
         self.current_date = today;
         self.selected_date = today;
         if month_changed {
-            self.google_needs_fetch = true;
-            self.icloud_needs_fetch = true;
+            for nf in &mut self.needs_fetch {
+                *nf = true;
+            }
         }
     }
 
@@ -229,9 +228,10 @@ impl App {
     }
 
     pub fn get_current_source_events(&self) -> &[DisplayEvent] {
-        match self.selected_source {
-            EventSource::Google => self.events.google.get(self.selected_date),
-            EventSource::ICloud => self.events.icloud.get(self.selected_date),
+        if self.selected_source < self.events.sources.len() {
+            self.events.sources[self.selected_source].get(self.selected_date)
+        } else {
+            &[]
         }
     }
 
@@ -244,10 +244,8 @@ impl App {
     }
 
     pub fn enter_event_mode(&mut self) {
-        let google_events = self.events.google.get(self.selected_date);
-        let icloud_events = self.events.icloud.get(self.selected_date);
-
-        if google_events.is_empty() && icloud_events.is_empty() {
+        let all_empty = self.events.sources.iter().all(|s| s.get(self.selected_date).is_empty());
+        if all_empty {
             return;
         }
 
@@ -257,62 +255,49 @@ impl App {
         if self.selected_date == today {
             let current_time = Local::now().time();
 
-            if let Some((idx, is_current_or_next)) = find_current_or_next_event(google_events, current_time)
-                && is_current_or_next {
-                    self.selected_source = EventSource::Google;
-                    self.selected_event_index = idx;
+            // Try to find current or next event across sources
+            for idx in 0..self.events.sources.len() {
+                let events = self.events.sources[idx].get(self.selected_date);
+                if let Some((pos, _)) = find_current_or_next_event(events, current_time) {
+                    self.selected_source = idx;
+                    self.selected_event_index = pos;
                     return;
                 }
+            }
 
-            if let Some((idx, is_current_or_next)) = find_current_or_next_event(icloud_events, current_time)
-                && is_current_or_next {
-                    self.selected_source = EventSource::ICloud;
-                    self.selected_event_index = idx;
-                    return;
-                }
-
-            let google_next = find_current_or_next_event(google_events, current_time);
-            let icloud_next = find_current_or_next_event(icloud_events, current_time);
-
-            match (google_next, icloud_next) {
-                (Some((g_idx, _)), Some((i_idx, _))) => {
-                    let g_time = &google_events[g_idx].time_str;
-                    let i_time = &icloud_events[i_idx].time_str;
-                    if g_time <= i_time {
-                        self.selected_source = EventSource::Google;
-                        self.selected_event_index = g_idx;
-                    } else {
-                        self.selected_source = EventSource::ICloud;
-                        self.selected_event_index = i_idx;
+            // Find the closest next event across all sources
+            let mut best: Option<(usize, usize, &str)> = None; // (source_idx, event_idx, time_str)
+            for idx in 0..self.events.sources.len() {
+                let events = self.events.sources[idx].get(self.selected_date);
+                if let Some((pos, _)) = find_current_or_next_event(events, current_time) {
+                    let t = &events[pos].time_str;
+                    match best {
+                        None => best = Some((idx, pos, t)),
+                        Some((_, _, bt)) if t.as_str() < bt => best = Some((idx, pos, t)),
+                        _ => {}
                     }
-                    return;
                 }
-                (Some((idx, _)), None) => {
-                    self.selected_source = EventSource::Google;
-                    self.selected_event_index = idx;
-                    return;
-                }
-                (None, Some((idx, _))) => {
-                    self.selected_source = EventSource::ICloud;
-                    self.selected_event_index = idx;
-                    return;
-                }
-                (None, None) => {}
+            }
+            if let Some((idx, pos, _)) = best {
+                self.selected_source = idx;
+                self.selected_event_index = pos;
+                return;
             }
         }
 
-        if !google_events.is_empty() {
-            self.selected_source = EventSource::Google;
-            self.selected_event_index = 0;
-        } else {
-            self.selected_source = EventSource::ICloud;
-            self.selected_event_index = 0;
+        // Fall back to first non-empty source
+        for idx in 0..self.events.sources.len() {
+            let events = self.events.sources[idx].get(self.selected_date);
+            if !events.is_empty() {
+                self.selected_source = idx;
+                self.selected_event_index = 0;
+                return;
+            }
         }
     }
 
     pub fn exit_event_mode(&mut self) {
         self.navigation_mode = NavigationMode::Day;
-        self.selected_source = EventSource::Google;
         self.selected_event_index = 0;
     }
 
@@ -321,33 +306,45 @@ impl App {
 
         if self.selected_event_index < current_events.len().saturating_sub(1) {
             self.selected_event_index += 1;
-        } else if self.selected_source == EventSource::Google {
-            let icloud_events = self.events.icloud.get(self.selected_date);
-            if !icloud_events.is_empty() {
-                self.selected_source = EventSource::ICloud;
-                self.selected_event_index = 0;
-            } else {
-                self.navigate_to_next_day_with_events();
-            }
-        } else {
-            self.navigate_to_next_day_with_events();
+            return;
         }
+
+        // Try next source
+        let n = self.events.sources.len();
+        for offset in 1..n {
+            let idx = (self.selected_source + offset) % n;
+            let events = self.events.sources[idx].get(self.selected_date);
+            if !events.is_empty() {
+                self.selected_source = idx;
+                self.selected_event_index = 0;
+                return;
+            }
+        }
+
+        // No more events today, go to next day with events
+        self.navigate_to_next_day_with_events();
     }
 
     pub fn prev_event(&mut self) {
         if self.selected_event_index > 0 {
             self.selected_event_index -= 1;
-        } else if self.selected_source == EventSource::ICloud {
-            let google_events = self.events.google.get(self.selected_date);
-            if !google_events.is_empty() {
-                self.selected_source = EventSource::Google;
-                self.selected_event_index = google_events.len().saturating_sub(1);
-            } else {
-                self.navigate_to_prev_day_with_events();
-            }
-        } else {
-            self.navigate_to_prev_day_with_events();
+            return;
         }
+
+        // Try previous source
+        let n = self.events.sources.len();
+        for offset in 1..n {
+            let idx = (self.selected_source + n - offset) % n;
+            let events = self.events.sources[idx].get(self.selected_date);
+            if !events.is_empty() {
+                self.selected_source = idx;
+                self.selected_event_index = events.len().saturating_sub(1);
+                return;
+            }
+        }
+
+        // No more events today, go to previous day with events
+        self.navigate_to_prev_day_with_events();
     }
 
     fn navigate_to_next_day_with_events(&mut self) {
@@ -360,15 +357,17 @@ impl App {
                 if check_date.month() != self.current_date.month() || check_date.year() != self.current_date.year() {
                     self.current_date = check_date;
                 }
-                let google_events = self.events.google.get(check_date);
-                if !google_events.is_empty() {
-                    self.selected_source = EventSource::Google;
-                    self.selected_event_index = 0;
-                } else {
-                    self.selected_source = EventSource::ICloud;
-                    self.selected_event_index = 0;
+                for idx in 0..self.events.sources.len() {
+                    let events = self.events.sources[idx].get(check_date);
+                    if !events.is_empty() {
+                        self.selected_source = idx;
+                        self.selected_event_index = 0;
+                        return;
+                    }
                 }
-                return;
+                // Fallback
+                self.selected_source = 0;
+                self.selected_event_index = 0;
             }
             check_date += Duration::days(1);
         }
@@ -384,15 +383,17 @@ impl App {
                 if check_date.month() != self.current_date.month() || check_date.year() != self.current_date.year() {
                     self.current_date = check_date;
                 }
-                let icloud_events = self.events.icloud.get(check_date);
-                let google_events = self.events.google.get(check_date);
-                if !icloud_events.is_empty() {
-                    self.selected_source = EventSource::ICloud;
-                    self.selected_event_index = icloud_events.len().saturating_sub(1);
-                } else {
-                    self.selected_source = EventSource::Google;
-                    self.selected_event_index = google_events.len().saturating_sub(1);
+                for idx in (0..self.events.sources.len()).rev() {
+                    let events = self.events.sources[idx].get(check_date);
+                    if !events.is_empty() {
+                        self.selected_source = idx;
+                        self.selected_event_index = events.len().saturating_sub(1);
+                        return;
+                    }
                 }
+                // Fallback (shouldn't reach since has_events is true)
+                self.selected_source = 0;
+                self.selected_event_index = 0;
                 return;
             }
             check_date -= Duration::days(1);
@@ -433,27 +434,28 @@ impl App {
     }
 
     pub fn update_search_results(&mut self) {
-        let search = match self.search.as_ref() {
-            Some(s) => s,
-            None => return,
+        let query_lower = {
+            let search = match self.search.as_ref() {
+                Some(s) => s,
+                None => return,
+            };
+            search.query.to_lowercase()
         };
-
-        let query_lower = search.query.to_lowercase();
         let mut results: Vec<SearchResult> = Vec::new();
         let today = Local::now().date_naive();
 
         if !query_lower.is_empty() {
-            let matched_events = self.events.google.all_events().map(|e| (e, EventSource::Google))
-                .chain(self.events.icloud.all_events().map(|e| (e, EventSource::ICloud)));
-            for (event, source) in matched_events {
-                if event.date >= today
-                    && let Some(match_type) = event_match_type(event, &query_lower)
-                {
-                    results.push(SearchResult {
-                        event: event.clone(),
-                        source,
-                        match_type,
-                    });
+            for (idx, source) in self.events.sources.iter().enumerate() {
+                for event in source.all_events() {
+                    if event.date >= today
+                        && let Some(match_type) = event_match_type(event, &query_lower)
+                    {
+                        results.push(SearchResult {
+                            event: event.clone(),
+                            source_idx: idx,
+                            match_type,
+                        });
+                    }
                 }
             }
             results.sort_by(|a, b| {
@@ -478,10 +480,10 @@ impl App {
     }
 
     pub fn select_search_result(&mut self) {
-        let (date, source, event_title) = match self.search.as_ref() {
+        let (date, source_idx, event_title) = match self.search.as_ref() {
             Some(s) => {
                 match s.results.get(s.selected_index) {
-                    Some(r) => (r.event.date, r.source, r.event.title.clone()),
+                    Some(r) => (r.event.date, r.source_idx, r.event.title.clone()),
                     None => return,
                 }
             }
@@ -494,17 +496,19 @@ impl App {
         self.selected_date = date;
         if month_changed {
             self.current_date = date.with_day(1).unwrap();
-            self.google_needs_fetch = true;
-            self.icloud_needs_fetch = true;
+            for nf in &mut self.needs_fetch {
+                *nf = true;
+            }
         }
 
         // Enter event mode on the correct source/index
         self.navigation_mode = NavigationMode::Event;
-        self.selected_source = source;
+        self.selected_source = source_idx;
 
-        let events = match source {
-            EventSource::Google => self.events.google.get(date),
-            EventSource::ICloud => self.events.icloud.get(date),
+        let events = if source_idx < self.events.sources.len() {
+            self.events.sources[source_idx].get(date)
+        } else {
+            &[]
         };
         self.selected_event_index = events.iter()
             .position(|e| e.title == event_title)
@@ -603,7 +607,7 @@ mod tests {
 
     fn make_event_with_attendees(title: &str, attendees: Vec<DisplayAttendee>) -> DisplayEvent {
         DisplayEvent {
-            id: EventId::Google { calendar_id: "test".to_string(), event_id: "test-id".to_string(), calendar_name: None },
+            id: EventId::Google { calendar_id: "test".to_string(), event_id: "test-id".to_string(), calendar_name: None, account_label: None },
             title: title.to_string(),
             time_str: "10:00".to_string(),
             end_time_str: None,
