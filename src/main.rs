@@ -141,7 +141,7 @@ fn generate_account_id() -> String {
 enum AsyncMessage {
     GoogleToken(usize, TokenInfo),
     GoogleAuthError(usize, String),
-    GoogleEvents(usize, Vec<google::CalendarEvent>, NaiveDate, String, Option<String>),
+    GoogleEvents(usize, Vec<google::CalendarEvent>, NaiveDate, String, Option<String>, Option<String>),
     GoogleFetchError(usize, String),
     GoogleTokenRefreshed(usize, TokenInfo),
     GoogleRefreshFailed(usize, String),
@@ -395,8 +395,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .collect();
     let mut status_parts: Vec<String> = Vec::new();
     if !unauth_indices.is_empty() {
-        let names: Vec<&str> = unauth_indices.iter().map(|&i| account_labels[i].as_str()).collect();
-        status_parts.push(format!("Press 1-{} to sign in: {}", names.len(), names.join(", ")));
+        let names: Vec<String> = unauth_indices.iter().map(|&i| format!("[{}] {}", i + 1, account_labels[i])).collect();
+        status_parts.push(format!("Press number to sign in: {}", names.join(", ")));
     }
     if !config::keyring_available() && app.config.accounts.iter().any(|a| matches!(a, AccountConfig::Google(_))) {
         status_parts.push("Warning: no system keyring — tokens stored on disk (less secure)".to_string());
@@ -481,10 +481,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         let account_idx = i;
                         tokio::spawn(async move {
                             let client = CalendarClient::new();
-                            let calendar_name = client.get_calendar_name(&tokens, &calendar_id).await.ok().flatten();
+                            let (calendar_name, calendar_color) = client.get_calendar_metadata(&tokens, &calendar_id).await.ok().unwrap_or((None, None));
                             match client.list_events(&tokens, &calendar_id, start, end).await {
                                 Ok(events) => {
-                                    let _ = tx.send(AsyncMessage::GoogleEvents(account_idx, events, start, calendar_id, calendar_name)).await;
+                                    let _ = tx.send(AsyncMessage::GoogleEvents(account_idx, events, start, calendar_id, calendar_name, calendar_color)).await;
                                 }
                                 Err(e) => {
                                     let _ = tx.send(AsyncMessage::GoogleFetchError(account_idx, e.to_string())).await;
@@ -579,10 +579,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         }
                     }
                 }
-                AsyncMessage::GoogleEvents(account_idx, events, month_date, calendar_id, calendar_name) => {
+                AsyncMessage::GoogleEvents(account_idx, events, month_date, calendar_id, calendar_name, calendar_color) => {
                     let label = account_detail_label(&app.config, account_idx);
                     let display_events: Vec<DisplayEvent> = events.into_iter()
-                        .filter_map(|e| conversion::google_event_to_display(e, calendar_id.clone(), calendar_name.clone(), label.clone()))
+                        .filter_map(|e| conversion::google_event_to_display(e, calendar_id.clone(), calendar_name.clone(), label.clone(), calendar_color.clone()))
                         .collect();
                     app.events.sources[account_idx].store(display_events, month_date);
                     app.events.save_to_disk();

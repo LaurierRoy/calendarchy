@@ -617,6 +617,8 @@ mod tests {
             is_free: false,
             meeting_url: None,
             event_url: None,
+            color_id: None,
+            calendar_color: None,
             description: None,
             location: None,
             attendees,

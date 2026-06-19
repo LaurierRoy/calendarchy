@@ -44,6 +44,9 @@ pub struct CalendarEvent {
     pub hangout_link: Option<String>,
     #[serde(default)]
     pub html_link: Option<String>,
+    /// Google event color ID ("1"-"11", or None for default). See google_event_color().
+    #[serde(default)]
+    pub color_id: Option<String>,
 }
 
 /// Conference/meeting data
@@ -232,6 +235,7 @@ mod tests {
             conference_data: None,
             hangout_link: None,
             html_link: None,
+            color_id: None,
         }
     }
 
@@ -257,6 +261,7 @@ mod tests {
             conference_data: None,
             hangout_link: None,
             html_link: None,
+            color_id: None,
         }
     }
 

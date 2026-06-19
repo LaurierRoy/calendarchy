@@ -161,8 +161,19 @@ impl CalendarClient {
         token: &TokenInfo,
         calendar_id: &str,
     ) -> Result<Option<String>> {
+        let (name, _) = self.get_calendar_metadata(token, calendar_id).await?;
+        Ok(name)
+    }
+
+    /// Fetch calendar metadata (name and background color).
+    /// Returns (name, hex_background_color).
+    pub async fn get_calendar_metadata(
+        &self,
+        token: &TokenInfo,
+        calendar_id: &str,
+    ) -> Result<(Option<String>, Option<String>)> {
         let url = format!(
-            "{}/calendars/{}",
+            "{}/users/me/calendarList/{}",
             CALENDAR_API_BASE,
             urlencoding::encode(calendar_id)
         );
@@ -181,16 +192,18 @@ impl CalendarClient {
         }
 
         if !response.status().is_success() {
-            return Ok(None);
+            return Ok((None, None));
         }
 
         #[derive(serde::Deserialize)]
         struct CalendarMeta {
             summary: Option<String>,
+            #[serde(default, rename = "backgroundColor")]
+            background_color: Option<String>,
         }
 
         let meta: CalendarMeta = response.json().await?;
-        Ok(meta.summary)
+        Ok((meta.summary, meta.background_color))
     }
 }
 

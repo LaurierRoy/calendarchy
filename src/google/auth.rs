@@ -9,7 +9,7 @@ use tokio::net::TcpListener;
 
 const AUTH_URL: &str = "https://accounts.google.com/o/oauth2/v2/auth";
 const TOKEN_URL: &str = "https://oauth2.googleapis.com/token";
-const CALENDAR_SCOPE: &str = "https://www.googleapis.com/auth/calendar.events";
+const CALENDAR_SCOPE: &str = "https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/calendar.readonly";
 const REDIRECT_URI: &str = "http://127.0.0.1:18457";
 
 pub struct GoogleAuth {

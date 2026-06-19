@@ -9,6 +9,7 @@ pub fn google_event_to_display(
     calendar_id: String,
     calendar_name: Option<String>,
     account_label: Option<String>,
+    calendar_color: Option<String>,
 ) -> Option<DisplayEvent> {
     let mut attendees: Vec<DisplayAttendee> = event.attendees.as_ref().map(|atts| {
         atts.iter()
@@ -50,6 +51,8 @@ pub fn google_event_to_display(
         is_free: event.is_free(),
         meeting_url: event.meeting_url(),
         event_url: event.html_link,
+        color_id: event.color_id,
+        calendar_color,
         description: event.description.clone(),
         location: event.location.clone(),
         attendees,
@@ -99,6 +102,8 @@ pub fn icloud_event_to_display(event: ICalEvent, calendar_name: Option<String>, 
         is_free: event.is_free(),
         meeting_url: event.meeting_url(),
         event_url: None,
+        color_id: None,
+        calendar_color: None,
         description: event.description.clone(),
         location: event.location.clone(),
         attendees,
@@ -133,13 +138,14 @@ mod tests {
             conference_data: None,
             hangout_link: None,
             html_link: None,
+            color_id: None,
         }
     }
 
     #[test]
     fn test_google_event_to_display_basic() {
         let event = make_google_event("event-123", "Team Meeting", NaiveDate::from_ymd_opt(2026, 1, 15).unwrap());
-        let result = google_event_to_display(event, "cal-id".to_string(), Some("Work".to_string()), Some("Work".to_string()));
+        let result = google_event_to_display(event, "cal-id".to_string(), Some("Work".to_string()), Some("Work".to_string()), None);
 
         assert!(result.is_some());
         let display = result.unwrap();
@@ -168,7 +174,7 @@ mod tests {
             },
         ]);
 
-        let result = google_event_to_display(event, "cal-id".to_string(), None, None);
+        let result = google_event_to_display(event, "cal-id".to_string(), None, None, None);
         assert!(result.is_some());
         let display = result.unwrap();
 

@@ -68,6 +68,12 @@ pub struct DisplayEvent {
     pub is_free: bool, // true if event is marked as "free" (doesn't block time)
     pub meeting_url: Option<String>, // Zoom, Meet, Teams link if available
     pub event_url: Option<String>, // Link to open event in browser (Google Calendar web UI)
+    /// Google Calendar color ID ("1"-"11"). None for default or iCloud events.
+    #[serde(default)]
+    pub color_id: Option<String>,
+    /// Calendar-level background color (hex, e.g. "#ff0000"). Used as fallback when color_id is None.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub calendar_color: Option<String>,
     pub description: Option<String>,
     pub location: Option<String>,
     pub attendees: Vec<DisplayAttendee>,
@@ -256,6 +262,8 @@ mod tests {
             is_free: false,
             meeting_url: None,
             event_url: None,
+            color_id: None,
+            calendar_color: None,
             description: None,
             location: None,
             attendees: vec![],

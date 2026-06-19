@@ -143,6 +143,8 @@ fn ek_event_to_display(e: EKEvent) -> DisplayEvent {
         is_free: e.is_free,
         meeting_url,
         event_url: None,
+        color_id: None,
+        calendar_color: None,
         description: e.description,
         location: e.location,
         attendees,

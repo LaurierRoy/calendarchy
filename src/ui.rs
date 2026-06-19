@@ -49,6 +49,46 @@ mod colors {
     pub const STATUS_MESSAGE: Color = Color::Yellow;
 }
 
+/// Map a Google Calendar colorId to a terminal color.
+/// Based on the Google Calendar event color palette.
+fn google_event_color(color_id: Option<&str>) -> Option<Color> {
+    match color_id {
+        Some("1") => Some(Color::Rgb { r: 164, g: 189, b: 252 }), // Lavender
+        Some("2") => Some(Color::Rgb { r: 122, g: 231, b: 191 }), // Sage
+        Some("3") => Some(Color::Rgb { r: 219, g: 173, b: 255 }), // Grape
+        Some("4") => Some(Color::Rgb { r: 255, g: 136, b: 124 }), // Flamingo
+        Some("5") => Some(Color::Rgb { r: 251, g: 215, b: 91 }),  // Banana
+        Some("6") => Some(Color::Rgb { r: 255, g: 184, b: 120 }), // Tangerine
+        Some("7") => Some(Color::Rgb { r: 70, g: 214, b: 219 }),  // Peacock
+        Some("8") => Some(Color::Rgb { r: 225, g: 225, b: 225 }), // Graphite
+        Some("9") => Some(Color::Rgb { r: 123, g: 215, b: 245 }), // Blueberry
+        Some("10") => Some(Color::Rgb { r: 107, g: 214, b: 141 }), // Basil
+        Some("11") => Some(Color::Rgb { r: 229, g: 115, b: 110 }), // Tomato
+        _ => None,
+    }
+}
+
+/// Determine the event color: event-level color_id takes priority, then calendar-level hex color.
+fn event_dot_color(event: &DisplayEvent) -> Option<Color> {
+    if let Some(c) = google_event_color(event.color_id.as_deref()) {
+        return Some(c);
+    }
+    if let Some(hex) = &event.calendar_color {
+        return parse_hex_color(hex);
+    }
+    None
+}
+
+/// Parse a hex color string like "#ff0000" into a terminal Color::Rgb.
+fn parse_hex_color(hex: &str) -> Option<Color> {
+    let hex = hex.trim_start_matches('#');
+    if hex.len() != 6 { return None; }
+    let r = u8::from_str_radix(&hex[0..2], 16).ok()?;
+    let g = u8::from_str_radix(&hex[2..4], 16).ok()?;
+    let b = u8::from_str_radix(&hex[4..6], 16).ok()?;
+    Some(Color::Rgb { r, g, b })
+}
+
 // Terminal write helpers
 fn draw_separator(out: &mut impl Write, x: u16, y: u16, width: u16) {
     execute!(out, cursor::MoveTo(x, y)).unwrap();
@@ -784,12 +824,21 @@ fn render_event_panel(
         print!("{:>7} ", event.time_str);
         execute!(out, ResetColor, SetAttribute(Attribute::Reset)).unwrap();
 
+        // Color dot (Google Calendar event color)
+        if let Some(accent) = event_dot_color(event) {
+            execute!(out, SetForegroundColor(accent)).unwrap();
+            print!("\u{25CF} "); // filled circle
+            execute!(out, ResetColor).unwrap();
+        } else {
+            print!("  ");
+        }
+
         // Title
         execute!(out, SetForegroundColor(event_color)).unwrap();
         if is_selected || ((is_current || is_next) && !is_unaccepted && !is_free_event) {
             execute!(out, SetAttribute(Attribute::Bold)).unwrap();
         }
-        let title_width = width.saturating_sub(10) as usize;
+        let title_width = width.saturating_sub(12) as usize;
         print!("{}", truncate_str(&event.title, title_width));
         execute!(out, ResetColor, SetAttribute(Attribute::Reset)).unwrap();
     }
@@ -836,9 +885,11 @@ fn render_event_details_column(
     execute!(out, cursor::MoveTo(content_x, current_row)).unwrap();
     execute!(out, SetForegroundColor(colors::TIME)).unwrap();
     if let Some(ref end) = event.end_time_str {
-        print!("\u{1F552} {} - {}", event.time_str, end);
+        let time_line = format!("\u{1F552} {} - {}", event.time_str, end);
+        print!("{:<width$}", truncate_str(&time_line, content_width), width = content_width);
     } else {
-        print!("\u{1F552} {}", event.time_str);
+        let time_line = format!("\u{1F552} {}", event.time_str);
+        print!("{:<width$}", truncate_str(&time_line, content_width), width = content_width);
     }
     execute!(out, ResetColor).unwrap();
     current_row += 1;
@@ -848,7 +899,7 @@ fn render_event_details_column(
         && !loc.is_empty() && current_row < y + height - 3 {
             execute!(out, cursor::MoveTo(content_x, current_row)).unwrap();
             execute!(out, SetForegroundColor(colors::LOCATION)).unwrap();
-            print!("\u{1F4CD} {}", truncate_str(loc, content_width.saturating_sub(3)));
+            print!("\u{1F4CD} {:<width$}", truncate_str(loc, content_width.saturating_sub(3)), width = content_width.saturating_sub(3));
             execute!(out, ResetColor).unwrap();
             current_row += 1;
         }
@@ -862,7 +913,7 @@ fn render_event_details_column(
             if current_row >= y + height - 3 { break; }
             execute!(out, cursor::MoveTo(content_x, current_row)).unwrap();
             execute!(out, SetForegroundColor(Color::DarkGrey)).unwrap();
-            print!("{}", line);
+            print!("{:<width$}", line, width = content_width);
             execute!(out, ResetColor).unwrap();
             current_row += 1;
         }
@@ -872,34 +923,25 @@ fn render_event_details_column(
     if current_row < y + height - 3 {
         execute!(out, cursor::MoveTo(content_x, current_row)).unwrap();
         execute!(out, SetForegroundColor(Color::DarkGrey)).unwrap();
-        match &event.id {
+        let source = match &event.id {
             EventId::Google { account_label, calendar_name, .. } => {
-                if let Some(label) = account_label {
-                    if let Some(name) = calendar_name {
-                        print!("{} - {}", label, name);
-                    } else {
-                        print!("{}", label);
-                    }
-                } else if let Some(name) = calendar_name {
-                    print!("Google - {}", name);
-                } else {
-                    print!("Google");
+                match (account_label, calendar_name) {
+                    (Some(label), Some(name)) => format!("{} - {}", label, name),
+                    (Some(label), None) => label.clone(),
+                    (None, Some(name)) => format!("Google - {}", name),
+                    (None, None) => "Google".to_string(),
                 }
             }
             EventId::ICloud { account_label, calendar_name, .. } => {
-                if let Some(label) = account_label {
-                    if let Some(name) = calendar_name {
-                        print!("{} - {}", label, name);
-                    } else {
-                        print!("{}", label);
-                    }
-                } else if let Some(name) = calendar_name {
-                    print!("iCloud - {}", name);
-                } else {
-                    print!("iCloud");
+                match (account_label, calendar_name) {
+                    (Some(label), Some(name)) => format!("{} - {}", label, name),
+                    (Some(label), None) => label.clone(),
+                    (None, Some(name)) => format!("iCloud - {}", name),
+                    (None, None) => "iCloud".to_string(),
                 }
             }
-        }
+        };
+        print!("{:<width$}", truncate_str(&source, content_width), width = content_width);
         execute!(out, ResetColor).unwrap();
         current_row += 1;
     }
@@ -1585,6 +1627,8 @@ mod tests {
             is_free: false,
             meeting_url: None,
             event_url: None,
+            color_id: None,
+            calendar_color: None,
             description: None,
             location: None,
             attendees: vec![],
@@ -1763,6 +1807,8 @@ mod tests {
             is_free: false,
             meeting_url: None,
             event_url: None,
+            color_id: None,
+            calendar_color: None,
             description: None,
             location: None,
             attendees: vec![],
