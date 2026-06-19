@@ -938,6 +938,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                         open_url(url);
                                     }
                             }
+                            (KeyCode::Char('O'), _) => {
+                                if let Some(event) = app.get_selected_event()
+                                    && let Some(ref url) = event.event_url {
+                                        open_url(url);
+                                    }
+                            }
                             (KeyCode::Char('a') | KeyCode::Char('а'), _) => {
                                 if let Some(event) = app.get_selected_event() {
                                     if let EventId::Google { calendar_id, event_id, .. } = event.id.clone() {

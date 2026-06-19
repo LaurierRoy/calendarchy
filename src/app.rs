@@ -616,6 +616,7 @@ mod tests {
             is_organizer: false,
             is_free: false,
             meeting_url: None,
+            event_url: None,
             description: None,
             location: None,
             attendees,

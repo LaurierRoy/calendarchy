@@ -42,6 +42,8 @@ pub struct CalendarEvent {
     pub attendees: Option<Vec<Attendee>>,
     pub conference_data: Option<ConferenceData>,
     pub hangout_link: Option<String>,
+    #[serde(default)]
+    pub html_link: Option<String>,
 }
 
 /// Conference/meeting data
@@ -229,6 +231,7 @@ mod tests {
             attendees: None,
             conference_data: None,
             hangout_link: None,
+            html_link: None,
         }
     }
 
@@ -253,6 +256,7 @@ mod tests {
             attendees: None,
             conference_data: None,
             hangout_link: None,
+            html_link: None,
         }
     }
 

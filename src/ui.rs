@@ -853,6 +853,21 @@ fn render_event_details_column(
             current_row += 1;
         }
 
+    // Description (up to 3 lines, word-wrapped)
+    if let Some(ref desc) = event.description
+        && !desc.is_empty() && current_row < y + height - 3
+    {
+        let lines = wrap_text(desc, content_width, 3);
+        for line in &lines {
+            if current_row >= y + height - 3 { break; }
+            execute!(out, cursor::MoveTo(content_x, current_row)).unwrap();
+            execute!(out, SetForegroundColor(Color::DarkGrey)).unwrap();
+            print!("{}", line);
+            execute!(out, ResetColor).unwrap();
+            current_row += 1;
+        }
+    }
+
     // Calendar source
     if current_row < y + height - 3 {
         execute!(out, cursor::MoveTo(content_x, current_row)).unwrap();
@@ -897,6 +912,15 @@ fn render_event_details_column(
         execute!(out, cursor::MoveTo(content_x, current_row)).unwrap();
         execute!(out, SetForegroundColor(colors::ACTION)).unwrap();
         print!("[J] Join");
+        execute!(out, ResetColor).unwrap();
+        current_row += 1;
+    }
+
+    // Open in browser
+    if event.event_url.is_some() && current_row < y + height - 3 {
+        execute!(out, cursor::MoveTo(content_x, current_row)).unwrap();
+        execute!(out, SetForegroundColor(colors::ACTION)).unwrap();
+        print!("[O] Open in browser");
         execute!(out, ResetColor).unwrap();
         current_row += 1;
     }
@@ -1037,6 +1061,53 @@ fn truncate_str(s: &str, max_len: usize) -> String {
         let truncated: String = s.chars().take(max_len.saturating_sub(1)).collect();
         format!("{}…", truncated)
     }
+}
+
+/// Word-wrap text to fit `line_width`, returning at most `max_lines` lines.
+fn wrap_text(s: &str, line_width: usize, max_lines: usize) -> Vec<String> {
+    let mut lines: Vec<String> = Vec::new();
+    for paragraph in s.split('\n') {
+        if lines.len() >= max_lines {
+            break;
+        }
+        let mut current = String::new();
+        for word in paragraph.split_whitespace() {
+            if current.is_empty() {
+                if word.chars().count() > line_width {
+                    // Word longer than line — truncate
+                    let line = truncate_str(word, line_width);
+                    lines.push(line);
+                    if lines.len() >= max_lines {
+                        break;
+                    }
+                    current.clear();
+                } else {
+                    current = word.to_string();
+                }
+            } else if current.len() + 1 + word.chars().count() <= line_width {
+                current.push(' ');
+                current.push_str(word);
+            } else {
+                lines.push(std::mem::take(&mut current));
+                if lines.len() >= max_lines {
+                    break;
+                }
+                current = word.to_string();
+            }
+        }
+        if !current.is_empty() && lines.len() < max_lines {
+            lines.push(current);
+        }
+    }
+    if lines.len() > max_lines {
+        lines.truncate(max_lines);
+        if let Some(last) = lines.last_mut() {
+            if last.chars().count() > 3 {
+                *last = truncate_str(last, last.chars().count().saturating_sub(1));
+            }
+        }
+    }
+    lines
 }
 
 /// Format a smart "when" string combining date and time based on proximity
@@ -1513,6 +1584,7 @@ mod tests {
             is_organizer: false,
             is_free: false,
             meeting_url: None,
+            event_url: None,
             description: None,
             location: None,
             attendees: vec![],
@@ -1690,6 +1762,7 @@ mod tests {
             is_organizer: false,
             is_free: false,
             meeting_url: None,
+            event_url: None,
             description: None,
             location: None,
             attendees: vec![],

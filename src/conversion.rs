@@ -49,6 +49,7 @@ pub fn google_event_to_display(
         is_organizer: event.is_organizer(),
         is_free: event.is_free(),
         meeting_url: event.meeting_url(),
+        event_url: event.html_link,
         description: event.description.clone(),
         location: event.location.clone(),
         attendees,
@@ -97,6 +98,7 @@ pub fn icloud_event_to_display(event: ICalEvent, calendar_name: Option<String>, 
         is_organizer,
         is_free: event.is_free(),
         meeting_url: event.meeting_url(),
+        event_url: None,
         description: event.description.clone(),
         location: event.location.clone(),
         attendees,
@@ -130,6 +132,7 @@ mod tests {
             attendees: None,
             conference_data: None,
             hangout_link: None,
+            html_link: None,
         }
     }
 
