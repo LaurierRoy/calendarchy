@@ -924,7 +924,7 @@ fn render_event_details_column(
             if current_row >= y + height - 3 { break; }
             execute!(out, cursor::MoveTo(content_x, current_row)).unwrap();
             execute!(out, SetForegroundColor(Color::DarkGrey)).unwrap();
-            print!("{:<width$}", line, width = content_width);
+                print!("{}", truncate_str(line, content_width));
             execute!(out, ResetColor).unwrap();
             current_row += 1;
         }
@@ -1145,11 +1145,20 @@ fn wrap_text(s: &str, line_width: usize, max_lines: usize) -> Vec<String> {
                 if lines.len() >= max_lines {
                     break;
                 }
-                current = word.to_string();
+                if word.chars().count() > line_width {
+                    lines.push(truncate_str(word, line_width));
+                    current.clear();
+                } else {
+                    current = word.to_string();
+                }
             }
         }
         if !current.is_empty() && lines.len() < max_lines {
-            lines.push(current);
+            if current.chars().count() > line_width {
+                lines.push(truncate_str(&current, line_width));
+            } else {
+                lines.push(current);
+            }
         }
     }
     if lines.len() > max_lines {
@@ -1433,7 +1442,7 @@ fn render_help_modal(out: &mut impl Write, term_width: u16, term_height: u16, mo
     // Top border with title
     execute!(out, cursor::MoveTo(start_x, start_y)).unwrap();
     print!("┌─ Keybindings ");
-    let remaining_top = modal_width.saturating_sub(15);
+    let remaining_top = modal_width.saturating_sub(16);
     for _ in 0..remaining_top {
         print!("─");
     }
