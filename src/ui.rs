@@ -131,6 +131,7 @@ pub struct RenderState<'a> {
     pub setup: Option<&'a SetupState>,
     // Help cheat sheet visibility
     pub show_help: bool,
+    pub show_event_detail: bool,
     // Account configs for wizard rendering
     pub accounts: &'a [AccountConfig],
     pub categories: &'a [Category],
@@ -253,6 +254,11 @@ pub fn render(state: &RenderState) {
         return;
     }
 
+    // Detect zoomed mode
+    let is_zoomed = state.navigation_mode == NavigationMode::ZoomedMonth
+        || state.navigation_mode == NavigationMode::ZoomedDay
+        || state.navigation_mode == NavigationMode::ZoomedEvent;
+
     // When search modal is active, skip redrawing underlying content to avoid flicker
     if let Some(search) = state.search {
         render_search_modal(&mut out, search, term_width, term_height, state.account_accents);
@@ -260,29 +266,33 @@ pub fn render(state: &RenderState) {
         // Clear and move to home position
         execute!(out, Clear(ClearType::All), cursor::MoveTo(0, 0)).unwrap();
 
-        // Month view handles both normal and day timeline modes
-        render_month_view(&mut out, state, today, term_width, term_height);
+        if is_zoomed {
+            render_zoomed_view(&mut out, state, today, term_width, term_height);
+        } else {
+            // Month view handles both normal and day timeline modes
+            render_month_view(&mut out, state, today, term_width, term_height);
 
-        // Render HTTP logs if enabled
-        let log_height = if state.show_logs { 8 } else { 0 };
-        if state.show_logs {
-            let logs = get_recent_logs(log_height as usize);
-            let log_start_row = term_height.saturating_sub(2 + log_height);
+            // Render HTTP logs if enabled
+            let log_height = if state.show_logs { 8 } else { 0 };
+            if state.show_logs {
+                let logs = get_recent_logs(log_height as usize);
+                let log_start_row = term_height.saturating_sub(2 + log_height);
 
-            execute!(out, SetForegroundColor(colors::LOG_TEXT)).unwrap();
-            for (i, log) in logs.iter().rev().enumerate() {
-                let row = log_start_row + i as u16;
-                if row < term_height.saturating_sub(2) {
-                    execute!(out, cursor::MoveTo(0, row)).unwrap();
-                    print!(" {}", truncate_str(log, term_width as usize - 2));
+                execute!(out, SetForegroundColor(colors::LOG_TEXT)).unwrap();
+                for (i, log) in logs.iter().rev().enumerate() {
+                    let row = log_start_row + i as u16;
+                    if row < term_height.saturating_sub(2) {
+                        execute!(out, cursor::MoveTo(0, row)).unwrap();
+                        print!(" {}", truncate_str(log, term_width as usize - 2));
+                    }
                 }
+                execute!(out, ResetColor).unwrap();
             }
-            execute!(out, ResetColor).unwrap();
-        }
 
-        // Render confirmation modal if there's a pending action
-        if let Some(action) = state.pending_action {
-            render_confirmation_modal(&mut out, action, term_width, term_height);
+            // Render confirmation modal if there's a pending action
+            if let Some(action) = state.pending_action {
+                render_confirmation_modal(&mut out, action, term_width, term_height);
+            }
         }
     }
 
@@ -323,6 +333,12 @@ pub fn render(state: &RenderState) {
     let controls = if state.pending_action.is_some() {
         // Confirmation mode controls
         " y/Enter:confirm n/Esc:cancel".to_string()
+    } else if state.navigation_mode == NavigationMode::ZoomedMonth {
+        " h/l:month Enter:day t:today ?:help Esc:back q:quit".to_string()
+    } else if state.navigation_mode == NavigationMode::ZoomedDay {
+        " h/l:day Enter:events t:today ?:help Esc:month".to_string()
+    } else if state.navigation_mode == NavigationMode::ZoomedEvent {
+        " j/k:event t:today ?:help Esc:day".to_string()
     } else if state.navigation_mode == NavigationMode::Event {
         // Event navigation mode controls
         " jk:nav ^d/^u:scroll f:find n:now t:today r:refresh ?:help Esc:back q:quit".to_string()
@@ -529,6 +545,321 @@ fn render_calendar(
 
     // Render week availability below the calendar grid
     render_week_availability(out, events, selected_date);
+}
+
+/// Render a full-screen zoomed calendar view for month or day navigation
+fn render_zoomed_view(
+    out: &mut impl Write,
+    state: &RenderState,
+    today: NaiveDate,
+    term_width: u16,
+    term_height: u16,
+) {
+    let current_date = state.current_date;
+    let selected_date = state.selected_date;
+    let in_day_mode = state.navigation_mode == NavigationMode::ZoomedDay
+        || state.navigation_mode == NavigationMode::ZoomedEvent;
+    let in_event_mode = state.navigation_mode == NavigationMode::ZoomedEvent;
+
+    let first_day = current_date.with_day(1).unwrap();
+    let start_weekday = first_day.weekday().num_days_from_monday();
+    let days_in_month = days_in_month(current_date);
+    let cell_width = (term_width / 7) as usize;
+    let num_weeks = ((start_weekday + days_in_month + 6) / 7).min(6);
+
+    // Available height: header rows (month + day-of-week) at top, controls at bottom
+    let available_height = term_height.saturating_sub(3) as u32;
+    let rows_per_week = (available_height / num_weeks).max(2) as usize;
+    let event_lines = rows_per_week.saturating_sub(1);
+
+    // Month header
+    execute!(out, cursor::MoveTo(0, 0)).unwrap();
+    let header = format!(
+        "{} {}",
+        current_date.format("%B").to_string().to_uppercase(),
+        current_date.year()
+    );
+    let pad = (term_width as usize).saturating_sub(header.len()) / 2;
+    print!("{:padding$}", "", padding = pad);
+    execute!(
+        out,
+        SetForegroundColor(colors::HEADER),
+        SetAttribute(Attribute::Bold)
+    )
+    .unwrap();
+    print!("{}", header);
+    execute!(out, ResetColor, SetAttribute(Attribute::Reset)).unwrap();
+
+    // Day-of-week header
+    let day_names = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+    for (i, name) in day_names.iter().enumerate() {
+        let x = (i as u16 * cell_width as u16).min(term_width.saturating_sub(cell_width as u16));
+        execute!(out, cursor::MoveTo(x, 1)).unwrap();
+        execute!(out, SetForegroundColor(Color::DarkGrey)).unwrap();
+        print!("{:^width$}", name, width = cell_width);
+        execute!(out, ResetColor).unwrap();
+    }
+
+    // Collect all events for the selected day (needed for detail view)
+    let selected_events: Vec<&DisplayEvent> = state.events.sources.iter()
+        .flat_map(|s| s.get(selected_date))
+        .collect();
+
+    // Calendar grid
+    for week in 0..num_weeks {
+        let week_y = 2 + week as u16 * rows_per_week as u16;
+        if week_y >= term_height.saturating_sub(1) {
+            break;
+        }
+
+        for day_col in 0..7u16 {
+            let cell_day = (week as i32 * 7 + day_col as i32) - start_weekday as i32 + 1;
+            if cell_day < 1 || cell_day > days_in_month as i32 {
+                continue;
+            }
+
+            let date = first_day.with_day(cell_day as u32).unwrap();
+            let is_today = date == today;
+            let is_selected = date == selected_date;
+            let is_weekend = day_col >= 5;
+            let x = (day_col * cell_width as u16).min(term_width.saturating_sub(cell_width as u16));
+
+            // Day number line
+            let mut y = week_y;
+            if y >= term_height.saturating_sub(1) {
+                break;
+            }
+            execute!(out, cursor::MoveTo(x, y)).unwrap();
+
+            if is_selected && in_day_mode {
+                execute!(
+                    out,
+                    SetForegroundColor(Color::Black),
+                    SetAttribute(Attribute::Reverse)
+                )
+                .unwrap();
+            } else if is_today {
+                execute!(
+                    out,
+                    SetForegroundColor(Color::Green),
+                    SetAttribute(Attribute::Bold)
+                )
+                .unwrap();
+            } else if is_weekend {
+                execute!(out, SetForegroundColor(Color::DarkGrey)).unwrap();
+            }
+
+            // Show day-of-week abbreviation on first week, then just the number
+            if week == 0 {
+                print!("{}{:cell_width$}", &day_names[day_col as usize][..3], cell_day, cell_width = cell_width.saturating_sub(3));
+            } else {
+                print!("{:>width$}", cell_day, width = cell_width);
+            }
+            execute!(out, ResetColor, SetAttribute(Attribute::Reset)).unwrap();
+
+            // Event lines for this day
+            let all_events: Vec<&DisplayEvent> = state.events.sources.iter()
+                .flat_map(|s| s.get(date))
+                .collect();
+
+            let display_count = all_events.len().min(event_lines);
+            let is_selected_day = in_event_mode && date == selected_date;
+            for ei in 0..display_count {
+                y = week_y + 1 + ei as u16;
+                if y >= term_height.saturating_sub(1) {
+                    break;
+                }
+                execute!(out, cursor::MoveTo(x, y)).unwrap();
+
+                let event = all_events[ei];
+                let is_selected_event = is_selected_day && ei == state.selected_event_index;
+
+                let prefix = if event.time_str == "All day" {
+                    "\u{2022}".to_string()
+                } else if let Some(idx) = event.time_str.find(':') {
+                    event.time_str[..idx].to_string()
+                } else {
+                    String::new()
+                };
+
+                let used = prefix.len() + 1;
+                let remaining = cell_width.saturating_sub(used);
+                let title = truncate_str(&event.title, remaining);
+
+                if is_selected_event {
+                    execute!(
+                        out,
+                        SetForegroundColor(Color::Black),
+                        SetAttribute(Attribute::Reverse)
+                    )
+                    .unwrap();
+                } else if let Some(dot_color) = event_dot_color(event) {
+                    execute!(out, SetForegroundColor(dot_color)).unwrap();
+                }
+                if ei > 0 || !prefix.is_empty() {
+                    print!("{}{}", prefix, title);
+                } else {
+                    print!("{:width$}", title, width = cell_width);
+                }
+                execute!(out, ResetColor).unwrap();
+            }
+        }
+    }
+
+    // Event detail overlay
+    if state.show_event_detail && in_event_mode {
+        if let Some(event) = selected_events.get(state.selected_event_index) {
+            render_event_detail_overlay(out, event, term_width, term_height);
+        }
+    }
+}
+
+/// Render a detail overlay for a selected event
+fn render_event_detail_overlay(
+    out: &mut impl Write,
+    event: &DisplayEvent,
+    term_width: u16,
+    term_height: u16,
+) {
+    let box_width = term_width.saturating_sub(8).min(80);
+    let box_x = (term_width.saturating_sub(box_width)) / 2;
+    let content_width = box_width.saturating_sub(4) as usize;
+    let lines: Vec<String> = {
+        use std::fmt::Write;
+        let mut l = Vec::new();
+
+        // Title
+        l.push(format!("\u{2502} {}", &event.title));
+        l.push(format!("\u{2502} \u{2500}{}\u{2500}", "\u{2500}".repeat(box_width.saturating_sub(4) as usize)));
+
+        // Date
+        let date_str = event.date.format("%A, %B %d, %Y").to_string();
+        l.push(format!("\u{2502} {}", date_str));
+
+        // Time
+        let time_str = if let Some(ref end) = event.end_time_str {
+            format!("{} \u{2192} {}", event.time_str, end)
+        } else {
+            event.time_str.clone()
+        };
+        l.push(format!("\u{2502} {}", time_str));
+
+        // Status
+        let status = if !event.accepted {
+            "\u{2717} Not accepted"
+        } else if event.is_organizer {
+            "\u{2605} Organizer"
+        } else {
+            "\u{2713} Accepted"
+        };
+        l.push(format!("\u{2502} {}", status));
+
+        if event.is_free {
+            l.push(format!("\u{2502} {}", "Free (doesn't block time)"));
+        }
+
+        // Location
+        if let Some(ref loc) = event.location {
+            let loc = truncate_str(loc, content_width.saturating_sub(3));
+            l.push(format!("\u{2502} \u{2302} {}", loc));
+        }
+
+        // Meeting URL
+        if let Some(ref url) = event.meeting_url {
+            let url = truncate_str(url, content_width.saturating_sub(11));
+            l.push(format!("\u{2502} Meeting: {}", url));
+        }
+
+        // Event URL
+        if let Some(ref url) = event.event_url {
+            let url = truncate_str(url, content_width.saturating_sub(19));
+            l.push(format!("\u{2502} Open in browser: {}", url));
+        }
+
+        // Description
+        if let Some(ref desc) = event.description {
+            if !desc.is_empty() {
+                l.push(format!("\u{2502} "));
+                for line in desc.lines() {
+                    let remaining = box_width as usize - 4;
+                    if line.len() > remaining {
+                        for chunk in line.as_bytes().chunks(remaining) {
+                            if let Ok(s) = std::str::from_utf8(chunk) {
+                                l.push(format!("\u{2502} {}", s));
+                            }
+                        }
+                    } else {
+                        l.push(format!("\u{2502} {}", line));
+                    }
+                }
+            }
+        }
+
+        // Attendees
+        if !event.attendees.is_empty() {
+            l.push(format!("\u{2502} "));
+            l.push(format!("\u{2502} {} attendees:", event.attendees.len()));
+            for att in &event.attendees {
+                let check = match att.status {
+                    AttendeeStatus::Accepted => "\u{2713}",
+                    _ => "\u{2717}",
+                };
+                let name = att.name.as_deref().unwrap_or(&att.email);
+                l.push(format!("\u{2502}   {} {}", check, name));
+            }
+        }
+
+        l
+    };
+
+    let box_height = lines.len() as u16 + 2;
+    let box_y = (term_height.saturating_sub(box_height)) / 2;
+
+    // Draw box
+    execute!(
+        out,
+        SetForegroundColor(Color::White),
+        SetAttribute(Attribute::Bold)
+    )
+    .unwrap();
+    // Top border
+    execute!(out, cursor::MoveTo(box_x, box_y)).unwrap();
+    print!("\u{250C}{}\u{2510}", "\u{2500}".repeat(box_width as usize));
+    // Content lines
+    for (i, line) in lines.iter().enumerate() {
+        let y = box_y + 1 + i as u16;
+        if y >= term_height {
+            break;
+        }
+        execute!(out, cursor::MoveTo(box_x, y)).unwrap();
+        let line_len = line.chars().count() as u16;
+        let right_border = " \u{2502}";
+        if line_len + 2 <= box_width {
+            let padding = box_width - line_len - 2;
+            print!("{}{}{}", line, " ".repeat(padding as usize), right_border);
+        } else {
+            let truncated = truncate_str(line, box_width.saturating_sub(2) as usize);
+            print!("{}{}", truncated, right_border);
+        }
+    }
+    // Bottom border
+    let bottom_y = box_y + 1 + lines.len() as u16;
+    if bottom_y < term_height {
+        execute!(out, cursor::MoveTo(box_x, bottom_y)).unwrap();
+        print!("\u{2514}{}\u{2518}", "\u{2500}".repeat(box_width as usize));
+    }
+    execute!(out, ResetColor, SetAttribute(Attribute::Reset)).unwrap();
+
+    // Dismiss hint
+    let hint = "Press Esc to close";
+    let hint_x = (term_width.saturating_sub(hint.len() as u16)) / 2;
+    let hint_y = bottom_y + 1;
+    if hint_y < term_height {
+        execute!(out, cursor::MoveTo(hint_x, hint_y)).unwrap();
+        execute!(out, SetForegroundColor(Color::DarkGrey)).unwrap();
+        print!("{}", hint);
+        execute!(out, ResetColor).unwrap();
+    }
 }
 
 /// Parse an event's time range into (start_minutes, end_minutes) from midnight.
@@ -1477,6 +1808,7 @@ fn render_help_modal(out: &mut impl Write, term_width: u16, term_height: u16, mo
         ("j/k ↑/↓", "Navigate days"),
         ("Ctrl+d/u", "Next/previous month"),
         ("Enter", "Enter event mode"),
+        ("z", "Open zoomed calendar"),
         ("t", "Go to today"),
         ("n", "Go to now"),
         ("r", "Refresh all events"),
@@ -1485,6 +1817,32 @@ fn render_help_modal(out: &mut impl Write, term_width: u16, term_height: u16, mo
         ("D", "Toggle HTTP logs"),
         ("?", "Toggle this help"),
         ("q/Esc", "Quit"),
+    ];
+
+    let zoomed_month_bindings = [
+        ("h/l or j/k", "Navigate months"),
+        ("Enter", "Enter day navigation"),
+        ("t", "Go to today"),
+        ("?", "Toggle this help"),
+        ("Esc", "Back to day mode"),
+        ("q", "Quit"),
+    ];
+
+    let zoomed_day_bindings = [
+        ("h/l or j/k", "Navigate days"),
+        ("Enter", "Select events on day"),
+        ("t", "Go to today"),
+        ("?", "Toggle this help"),
+        ("Esc", "Back to month mode"),
+        ("q", "Quit"),
+    ];
+
+    let zoomed_event_bindings = [
+        ("j/k", "Navigate events"),
+        ("t", "Go to today"),
+        ("?", "Toggle this help"),
+        ("Esc", "Back to day navigation"),
+        ("q", "Quit"),
     ];
 
     let event_bindings = [
@@ -1508,6 +1866,9 @@ fn render_help_modal(out: &mut impl Write, term_width: u16, term_height: u16, mo
     let title = match mode {
         NavigationMode::Day => "Day Navigation",
         NavigationMode::Event => "Event Navigation",
+        NavigationMode::ZoomedMonth => "Zoomed Month Navigation",
+        NavigationMode::ZoomedDay => "Zoomed Day Navigation",
+        NavigationMode::ZoomedEvent => "Zoomed Event Selection",
     };
 
     execute!(out, cursor::MoveTo(content_x, content_y)).unwrap();
@@ -1518,6 +1879,9 @@ fn render_help_modal(out: &mut impl Write, term_width: u16, term_height: u16, mo
     let bindings = match mode {
         NavigationMode::Day => &day_bindings[..],
         NavigationMode::Event => &event_bindings[..],
+        NavigationMode::ZoomedMonth => &zoomed_month_bindings[..],
+        NavigationMode::ZoomedDay => &zoomed_day_bindings[..],
+        NavigationMode::ZoomedEvent => &zoomed_event_bindings[..],
     };
 
     let max_key_width = 16usize;

@@ -69,6 +69,9 @@ impl SetupState {
 pub enum NavigationMode {
     Day,   // Navigate between days with h/j/k/l
     Event, // Navigate between events within selected day with j/k
+    ZoomedMonth, // Month-level navigation in zoomed calendar view
+    ZoomedDay,   // Day-level navigation in zoomed calendar view
+    ZoomedEvent, // Event selection within the zoomed calendar view
 }
 
 /// Pending action awaiting confirmation
@@ -104,6 +107,7 @@ pub struct App {
     pub setup: Option<SetupState>,
     /// Whether the help cheat sheet is visible
     pub show_help: bool,
+    pub show_event_detail: bool,
 }
 
 impl App {
@@ -131,6 +135,7 @@ impl App {
             last_render_minute: Local::now().minute(),
             setup: None,
             show_help: false,
+            show_event_detail: false,
         };
 
         app.enter_event_mode();
@@ -417,6 +422,18 @@ impl App {
             selected_index: 0,
             scroll_offset: 0,
         });
+    }
+
+    pub fn enter_zoomed_mode(&mut self) {
+        self.navigation_mode = NavigationMode::ZoomedMonth;
+    }
+
+    pub fn enter_zoomed_day_mode(&mut self) {
+        self.navigation_mode = NavigationMode::ZoomedDay;
+    }
+
+    pub fn exit_zoomed_mode(&mut self) {
+        self.navigation_mode = NavigationMode::Day;
     }
 
     pub fn close_search(&mut self) {

@@ -445,6 +445,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 search: app.search.as_ref(),
                 setup: app.setup.as_ref(),
                 show_help: app.show_help,
+                show_event_detail: app.show_event_detail,
                 accounts: &app.config.accounts,
                 categories: &app.config.categories,
                 account_labels: &account_labels,
@@ -911,6 +912,109 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         continue;
                     }
 
+                    if app.navigation_mode == NavigationMode::ZoomedMonth {
+                        match (key_event.code, key_event.modifiers) {
+                            (KeyCode::Char('h') | KeyCode::Left, _)
+                            | (KeyCode::Char('k') | KeyCode::Up, _) => {
+                                app.prev_month();
+                            }
+                            (KeyCode::Char('l') | KeyCode::Right, _)
+                            | (KeyCode::Char('j') | KeyCode::Down, _) => {
+                                app.next_month();
+                            }
+                            (KeyCode::Enter, _) => {
+                                app.enter_zoomed_day_mode();
+                            }
+                            (KeyCode::Char('t') | KeyCode::Char('т'), _) => {
+                                app.goto_today();
+                            }
+                            (KeyCode::Char('?'), _) => {
+                                app.show_help = !app.show_help;
+                            }
+                            (KeyCode::Esc, _) => {
+                                app.exit_zoomed_mode();
+                            }
+                            (KeyCode::Char('q') | KeyCode::Char('я'), _) => {
+                                break;
+                            }
+                            _ => {}
+                        }
+                        continue;
+                    }
+
+                    if app.navigation_mode == NavigationMode::ZoomedDay {
+                        match (key_event.code, key_event.modifiers) {
+                            (KeyCode::Char('h') | KeyCode::Left | KeyCode::Up, _)
+                            | (KeyCode::Char('k'), _) => {
+                                app.prev_day();
+                            }
+                            (KeyCode::Char('l') | KeyCode::Right | KeyCode::Down, _)
+                            | (KeyCode::Char('j'), _) => {
+                                app.next_day();
+                            }
+                            (KeyCode::Enter, _) => {
+                                let has_events = app.events.sources.iter()
+                                    .any(|s| !s.get(app.selected_date).is_empty());
+                                if has_events {
+                                    app.selected_event_index = 0;
+                                    app.navigation_mode = NavigationMode::ZoomedEvent;
+                                }
+                            }
+                            (KeyCode::Char('t') | KeyCode::Char('т'), _) => {
+                                app.goto_today();
+                            }
+                            (KeyCode::Char('?'), _) => {
+                                app.show_help = !app.show_help;
+                            }
+                            (KeyCode::Esc, _) => {
+                                app.navigation_mode = NavigationMode::ZoomedMonth;
+                            }
+                            (KeyCode::Char('q') | KeyCode::Char('я'), _) => {
+                                break;
+                            }
+                            _ => {}
+                        }
+                        continue;
+                    }
+
+                    if app.navigation_mode == NavigationMode::ZoomedEvent {
+                        if app.show_event_detail {
+                            app.show_event_detail = false;
+                            app.dirty = true;
+                            continue;
+                        }
+                        match (key_event.code, key_event.modifiers) {
+                            (KeyCode::Char('k') | KeyCode::Up, _) => {
+                                app.selected_event_index = app.selected_event_index.saturating_sub(1);
+                            }
+                            (KeyCode::Char('j') | KeyCode::Down, _) => {
+                                let total: usize = app.events.sources.iter()
+                                    .flat_map(|s| s.get(app.selected_date))
+                                    .count();
+                                app.selected_event_index = (app.selected_event_index + 1).min(total.saturating_sub(1));
+                            }
+                            (KeyCode::Enter, _) => {
+                                let has_events = app.events.sources.iter()
+                                    .any(|s| !s.get(app.selected_date).is_empty());
+                                if has_events {
+                                    app.show_event_detail = true;
+                                    app.dirty = true;
+                                }
+                            }
+                            (KeyCode::Esc, _) => {
+                                app.navigation_mode = NavigationMode::ZoomedDay;
+                            }
+                            (KeyCode::Char('?'), _) => {
+                                app.show_help = !app.show_help;
+                            }
+                            (KeyCode::Char('q') | KeyCode::Char('я'), _) => {
+                                break;
+                            }
+                            _ => {}
+                        }
+                        continue;
+                    }
+
                     if app.navigation_mode == NavigationMode::Event {
                         match (key_event.code, key_event.modifiers) {
                             (KeyCode::Char('j') | KeyCode::Char('й') | KeyCode::Down, _) => {
@@ -1074,6 +1178,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         }
                         (KeyCode::Char('?'), _) => {
                             app.show_help = !app.show_help;
+                        }
+                        (KeyCode::Char('z'), _) => {
+                            app.enter_zoomed_mode();
                         }
                         (KeyCode::Char('i') | KeyCode::Char('и'), _) => {
                             let idx = app.selected_source;
